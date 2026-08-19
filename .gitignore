@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+.solo-creator
+temp
+*.log
+.DS_Store

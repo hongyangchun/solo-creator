@@ -1,0 +1,43 @@
+{
+  "name": "@solo-creator/content-os",
+  "version": "0.1.0",
+  "description": "Local-first, highly modular content operating system for solo creators and indie hackers.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "solo-creator": "bin/solo-creator.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/cli/index.ts",
+    "lint": "eslint src/ --ext .ts",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "content-os",
+    "solo-creator",
+    "automation",
+    "cdp",
+    "deepseek-harness",
+    "wechat",
+    "xiaohongshu",
+    "twitter"
+  ],
+  "author": "hongyangchun",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^9.6.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "handlebars": "^4.7.8",
+    "playwright": "^1.44.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/node": "^20.14.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}
