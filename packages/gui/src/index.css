@@ -1,0 +1,64 @@
+/* Tailwind v4 CSS-first（无 tailwind.config.js）：
+   @theme 把 design-tokens.css 变量注册为工具类，实现层零裸 hex（P0-4）。 */
+@import 'tailwindcss';
+@import './design-tokens.css';
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-warm: var(--surface-warm);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-on: var(--accent-on);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-ch-wechat: var(--ch-wechat);
+  --color-ch-xiaohongshu: var(--ch-xiaohongshu);
+  --color-ch-x: var(--ch-x);
+  --color-ch-weibo: var(--ch-weibo);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  --radius-card: var(--radius-md);
+  --radius-modal: var(--radius-lg);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  margin: 0;
+  overflow: hidden;
+}
+
+/* 键盘焦点可见环 */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
