@@ -12,7 +12,8 @@
     "dev": "tsx watch src/cli/index.ts",
     "lint": "eslint src/ --ext .ts",
     "type-check": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:server": "node scripts/build-sidecar.mjs"
   },
   "keywords": [
     "content-os",
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.10",
     "@types/node": "^20.14.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.15.0",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
