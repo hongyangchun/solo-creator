@@ -21,6 +21,13 @@ const CHANNEL_LABELS: Record<string, string> = {
   weibo: '微博'
 };
 
+const PUBLISH_CHANNELS = [
+  { key: 'wechat', label: '微信' },
+  { key: 'xiaohongshu', label: '小红书' },
+  { key: 'x', label: 'X' },
+  { key: 'weibo', label: '微博' }
+] as const;
+
 function StatusPill({ status }: { status: string }) {
   if (status === 'drafted' || status === 'success') {
     return (
@@ -90,6 +97,82 @@ function DispatchRow({ record, onRetry }: { record: DispatchRecord; onRetry: (id
   );
 }
 
+function MasterCard({
+  master,
+  dispatches,
+  publishing,
+  onPublish,
+  onRetry
+}: {
+  master: MasterListItem;
+  dispatches: DispatchRecord[];
+  publishing: boolean;
+  onPublish: (id: string, channels: string[]) => void;
+  onRetry: (id: string) => void;
+}) {
+  const [channels, setChannels] = useState<string[]>(['wechat']);
+
+  const toggle = (key: string) => {
+    setChannels((prev) => (prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]));
+  };
+
+  const doPublish = () => {
+    if (channels.length === 0) return;
+    const labels = channels.map((c) => PUBLISH_CHANNELS.find((p) => p.key === c)?.label || c).join('、');
+    if (!confirm(`将以下渠道内容「仅存入草稿箱」，不会自动发布。所选渠道：${labels}。确认存入？`)) return;
+    onPublish(master.id, channels);
+  };
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-border bg-surface">
+      <div className="flex items-center gap-3 border-b border-border-soft px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{master.title}</div>
+          <div className="font-mono text-xs text-muted">{master.id}</div>
+        </div>
+        <button
+          className="flex items-center gap-1 rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-hover disabled:opacity-50"
+          disabled={publishing || channels.length === 0}
+          onClick={doPublish}
+        >
+          {publishing ? <LoaderCircle size={14} className="animate-spin" /> : <Send size={14} />}
+          一键存入草稿箱
+        </button>
+        <Link
+          to={`/preview/${master.id}`}
+          className="rounded-[var(--radius-sm)] border border-border px-2 py-1.5 text-xs text-fg-2 hover:border-accent hover:text-accent"
+        >
+          预览
+        </Link>
+      </div>
+      <div className="flex items-center gap-1.5 border-b border-border-soft px-4 py-2">
+        <span className="mr-1 text-xs text-muted">发布渠道：</span>
+        {PUBLISH_CHANNELS.map((c) => {
+          const checked = channels.includes(c.key);
+          return (
+            <button
+              key={c.key}
+              aria-pressed={checked}
+              onClick={() => toggle(c.key)}
+              className={`flex items-center gap-1 rounded-[var(--radius-pill)] px-2.5 py-1 text-xs transition-colors duration-[120ms] ${
+                checked ? 'bg-accent-soft font-medium text-accent' : 'border border-border text-fg-2 hover:border-accent hover:text-accent'
+              }`}
+            >
+              {checked && <CircleCheck size={12} />}
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+      {dispatches.length > 0 ? (
+        dispatches.map((d) => <DispatchRow key={d.id} record={d} onRetry={onRetry} />)
+      ) : (
+        <div className="px-4 py-3 text-xs text-muted">暂无分发记录</div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { data, isLoading, isError, error } = useDashboard();
   const publish = usePublish();
@@ -104,11 +187,10 @@ export default function Dashboard() {
     return acc;
   }, {});
 
-  const doPublish = async (id: string) => {
-    if (!confirm('将以下渠道内容「仅存入草稿箱」，不会自动发布。确认存入？')) return;
+  const doPublish = async (id: string, channels: string[]) => {
     setPublishingId(id);
     try {
-      await publish.mutateAsync({ id, channels: ['wechat'] });
+      await publish.mutateAsync({ id, channels });
     } finally {
       setPublishingId(null);
     }
@@ -133,33 +215,14 @@ export default function Dashboard() {
 
       <div className="mt-6 space-y-4">
         {masters.map((m) => (
-          <div key={m.id} className="rounded-[var(--radius-md)] border border-border bg-surface">
-            <div className="flex items-center gap-3 border-b border-border-soft px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{m.title}</div>
-                <div className="font-mono text-xs text-muted">{m.id}</div>
-              </div>
-              <button
-                className="flex items-center gap-1 rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-hover disabled:opacity-50"
-                disabled={publishingId === m.id}
-                onClick={() => doPublish(m.id)}
-              >
-                {publishingId === m.id ? <LoaderCircle size={14} className="animate-spin" /> : <Send size={14} />}
-                一键存入草稿箱
-              </button>
-              <Link
-                to={`/preview/${m.id}`}
-                className="rounded-[var(--radius-sm)] border border-border px-2 py-1.5 text-xs text-fg-2 hover:border-accent hover:text-accent"
-              >
-                预览
-              </Link>
-            </div>
-            {(dispatchesByMaster[m.id] || []).length > 0 ? (
-              dispatchesByMaster[m.id].map((d) => <DispatchRow key={d.id} record={d} onRetry={(id) => retry.mutate(id)} />)
-            ) : (
-              <div className="px-4 py-3 text-xs text-muted">暂无分发记录</div>
-            )}
-          </div>
+          <MasterCard
+            key={m.id}
+            master={m}
+            dispatches={dispatchesByMaster[m.id] || []}
+            publishing={publishingId === m.id}
+            onPublish={doPublish}
+            onRetry={(id) => retry.mutate(id)}
+          />
         ))}
       </div>
     </div>

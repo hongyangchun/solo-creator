@@ -54,7 +54,11 @@ function SecretRow({ item }: { item: SecretItem }) {
           <button
             aria-label={`删除 ${label}`}
             className="rounded-[var(--radius-sm)] border border-border p-1.5 text-muted transition-colors duration-[120ms] hover:border-danger hover:text-danger"
-            onClick={() => deleteSecret.mutate(item.key)}
+            onClick={() => {
+              if (window.confirm(`确认删除 ${label}？删除后相关功能将不可用。`)) {
+                deleteSecret.mutate(item.key);
+              }
+            }}
           >
             <Trash2 size={14} />
           </button>

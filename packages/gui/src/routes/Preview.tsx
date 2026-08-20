@@ -54,7 +54,7 @@ export default function Preview() {
 
   const runTranspile = async () => {
     if (!post) return;
-    const result = await transpile.mutateAsync({ id: masterId, channels: ['wechat', 'x', 'weibo'] });
+    const result = await transpile.mutateAsync({ id: masterId, channels: ['wechat', 'xiaohongshu', 'x', 'weibo'] });
     await cardPreview.mutateAsync({ id: masterId, theme: 'minimal_dark' });
     return result;
   };

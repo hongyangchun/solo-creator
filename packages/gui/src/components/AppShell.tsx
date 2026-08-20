@@ -108,10 +108,29 @@ export default function AppShell() {
   }, [theme]);
 
   useEffect(() => {
-    fetch('http://127.0.0.1:39281/api/v1/health')
-      .then((r) => r.json())
-      .then((j) => setEngineOk(j?.data?.status === 'ok'))
-      .catch(() => setEngineOk(false));
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    // Tauri sidecar 晚于 webview 启动：未就绪时每 3s 轮询，就绪即停；失败静默重试
+    const poll = () => {
+      fetch('http://127.0.0.1:39281/api/v1/health')
+        .then((r) => r.json())
+        .then((j) => {
+          if (cancelled) return;
+          const ok = j?.data?.status === 'ok';
+          setEngineOk(ok);
+          if (!ok) timer = setTimeout(poll, 3000);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setEngineOk(false);
+          timer = setTimeout(poll, 3000);
+        });
+    };
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   const missingSecrets = (secrets || []).filter((s) => !s.exists && s.key === 'DEEPSEEK_API_KEY').length > 0;

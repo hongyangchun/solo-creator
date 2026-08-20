@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Sparkles, Save, Anchor, ShieldCheck, Inbox, FileText, TriangleAlert, LoaderCircle } from 'lucide-react';
-import { useMasters, useCreateMaster, useSaveMaster, useSecrets } from '../lib/queries';
+import { useQueryClient } from '@tanstack/react-query';
+import { useMasters, useCreateMaster, useSaveMaster, useSecrets, useMaster } from '../lib/queries';
 import { MasterPostDetail } from '../lib/engineClient';
 
 const HOOK_TYPE_LABELS: Record<string, string> = {
@@ -126,31 +127,22 @@ export default function Studio() {
   const { data: list, isLoading } = useMasters();
   const create = useCreateMaster();
   const { data: secrets } = useSecrets();
+  const queryClient = useQueryClient();
   const [idea, setIdea] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const posts = list?.items || [];
   const noDeepSeek = !(secrets || []).some((s) => s.key === 'DEEPSEEK_API_KEY' && s.exists);
-  const activePost = useMemo<MasterPostDetail | null>(() => {
-    // 列表最新一篇作默认展示（详情字段从列表行近似还原，编辑保存经 PATCH 持久化）
-    const row = posts.find((p) => p.id === activeId) || posts[0];
-    if (!row) return null;
-    return {
-      id: row.id,
-      title: row.title,
-      rawIdea: row.raw_idea || '',
-      masterMarkdown: '',
-      hookCandidates: [],
-      keyTakeaways: [],
-      suggestedTags: [],
-      createdAt: row.created_at,
-      masterMarkdownUnknown: true
-    } as unknown as MasterPostDetail;
-  }, [posts, activeId]);
+
+  // 列表最新一篇作默认展示（未显式选中时回退到第一篇）
+  const resolvedId = activeId || posts[0]?.id || null;
+  const { data: activePost, isLoading: detailLoading } = useMaster(resolvedId);
 
   const expand = async () => {
     if (!idea.trim()) return;
     const post = await create.mutateAsync({ idea: idea.trim() });
+    // create 返回完整 MasterPostDetail，直接写入缓存避免 useMaster 闪空
+    queryClient.setQueryData(['master', post.id], post);
     setActiveId(post.id);
     setIdea('');
   };
@@ -206,7 +198,7 @@ export default function Studio() {
               <button
                 onClick={() => setActiveId(p.id)}
                 className={`w-full rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm transition-colors duration-[120ms] ${
-                  (activePost?.id || '') === p.id ? 'bg-accent-soft/70 text-accent' : 'text-fg-2 hover:bg-surface-warm'
+                  (resolvedId || '') === p.id ? 'bg-accent-soft/70 text-accent' : 'text-fg-2 hover:bg-surface-warm'
                 }`}
               >
                 <div className="truncate font-medium">{p.title}</div>
@@ -218,7 +210,21 @@ export default function Studio() {
       </aside>
 
       {/* 中栏 + 右栏 */}
-      {activePost ? (
+      {resolvedId && !activePost ? (
+        detailLoading ? (
+          <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted">
+            <LoaderCircle size={16} className="animate-spin" /> 正在加载母稿详情…
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center">
+            <div className="max-w-[360px] rounded-[var(--radius-md)] border border-border bg-surface p-8 text-center">
+              <TriangleAlert size={24} className="mx-auto text-warn" />
+              <p className="mt-3 text-sm font-medium">母稿详情加载失败</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted">请确认本地引擎已就绪后重试。</p>
+            </div>
+          </div>
+        )
+      ) : activePost ? (
         <>
           <EditorPane key={activePost.id} post={activePost} />
           <QualityPane post={activePost} />
