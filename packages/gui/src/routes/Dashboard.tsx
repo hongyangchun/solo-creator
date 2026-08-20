@@ -115,7 +115,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="mx-auto max-w-900px p-6">
+    <div className="mx-auto max-w-[900px] p-6">
       <div className="flex items-center gap-3">
         <LayoutDashboard size={20} className="text-accent" />
         <h1 className="text-2xl font-semibold tracking-tight">发布状态看板</h1>

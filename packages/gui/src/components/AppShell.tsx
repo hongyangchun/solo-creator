@@ -51,12 +51,12 @@ function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-1300 flex items-start justify-center pt-90px"
+      className="fixed inset-0 z-[1300] flex items-start justify-center pt-[90px]"
       style={{ background: 'rgba(16,24,20,0.4)', backdropFilter: 'blur(2px)' }}
       onClick={() => setOpen(false)}
     >
       <div
-        className="w-480px rounded-[var(--radius-lg)] border border-border bg-surface shadow-[var(--shadow-lg)]"
+        className="w-[480px] rounded-[var(--radius-lg)] border border-border bg-surface shadow-[var(--shadow-lg)]"
         style={{ marginTop: '10vh' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -76,11 +76,11 @@ function CommandPalette() {
           />
           <kbd className="font-mono text-xs text-muted">Esc</kbd>
         </div>
-        <ul className="max-h-320px overflow-auto p-2">
+        <ul className="max-h-[320px] overflow-auto p-2">
           {actions.map((a) => (
             <li key={a.label}>
               <button
-                className="flex w-full items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2 text-left text-fg transition-colors duration-120ms hover:bg-accent-soft"
+                className="flex w-full items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2 text-left text-fg transition-colors duration-[120ms] hover:bg-accent-soft"
                 onClick={() => {
                   a.run();
                   setOpen(false);
@@ -119,7 +119,7 @@ export default function AppShell() {
   return (
     <div className="flex h-full flex-col bg-bg text-fg">
       {/* 标题栏：macOS 左侧预留 80px 红绿灯安全区 */}
-      <header className="flex h-44px shrink-0 items-center gap-3 border-b border-border bg-surface px-4" style={{ paddingLeft: '96px' }}>
+      <header className="flex h-[44px] shrink-0 items-center gap-3 border-b border-border bg-surface px-4" style={{ paddingLeft: '96px' }}>
         <span className="text-sm font-semibold tracking-tight">SoloCreator Content OS</span>
         <div className="ml-auto flex items-center gap-2">
           {!engineOk && (
@@ -129,14 +129,14 @@ export default function AppShell() {
           )}
           <button
             aria-label="打开命令面板"
-            className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-border px-2 py-1 text-xs text-muted transition-colors duration-120ms hover:border-accent hover:text-accent"
+            className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-border px-2 py-1 text-xs text-muted transition-colors duration-[120ms] hover:border-accent hover:text-accent"
             onClick={() => useUiStore.getState().setCommandPaletteOpen(true)}
           >
             <Search size={14} /> 搜索 <kbd className="font-mono">⌘K</kbd>
           </button>
           <button
             aria-label="切换主题"
-            className="rounded-[var(--radius-sm)] border border-border p-1.5 text-muted transition-colors duration-120ms hover:border-accent hover:text-accent"
+            className="rounded-[var(--radius-sm)] border border-border p-1.5 text-muted transition-colors duration-[120ms] hover:border-accent hover:text-accent"
             onClick={toggleTheme}
           >
             {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
@@ -153,7 +153,7 @@ export default function AppShell() {
                 <NavLink
                   to={to}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2 text-sm transition-colors duration-120ms ${
+                    `flex items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2 text-sm transition-colors duration-[120ms] ${
                       isActive ? 'bg-accent-soft font-medium text-accent' : 'text-fg-2 hover:bg-surface-warm'
                     }`
                   }

@@ -88,7 +88,7 @@ export default function Preview() {
         <Monitor size={18} className="text-accent" />
         <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{post?.title || masterId}</h1>
         <button
-          className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-border px-3 py-1.5 text-xs transition-colors duration-120ms hover:border-accent hover:text-accent"
+          className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-border px-3 py-1.5 text-xs transition-colors duration-[120ms] hover:border-accent hover:text-accent"
           onClick={runTranspile}
           disabled={transpile.isPending || cardPreview.isPending}
         >
@@ -116,7 +116,7 @@ export default function Preview() {
           <button
             key={t.key}
             onClick={() => setChannel(t.key)}
-            className={`rounded-[var(--radius-pill)] px-3 py-1 text-xs transition-colors duration-120ms ${
+            className={`rounded-[var(--radius-pill)] px-3 py-1 text-xs transition-colors duration-[120ms] ${
               channel === t.key ? 'bg-accent-soft font-medium text-accent' : 'text-fg-2 hover:bg-surface-warm'
             }`}
           >

@@ -4,7 +4,7 @@ import { TrendingUp } from 'lucide-react';
 export default function Retro() {
   return (
     <div className="flex h-full items-center justify-center p-10">
-      <div className="max-w-420px rounded-[var(--radius-md)] border border-border bg-surface p-10 text-center">
+      <div className="max-w-[420px] rounded-[var(--radius-md)] border border-border bg-surface p-10 text-center">
         <TrendingUp size={28} className="mx-auto text-accent" />
         <h1 className="mt-4 text-lg font-semibold">数据复盘（v2 规划中）</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted">

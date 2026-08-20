@@ -42,7 +42,7 @@ function EditorPane({ post }: { post: MasterPostDetail }) {
         />
         {dirty && (
           <button
-            className="flex items-center gap-1 rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-xs font-medium text-accent-on transition-colors duration-120ms hover:bg-accent-hover"
+            className="flex items-center gap-1 rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-xs font-medium text-accent-on transition-colors duration-[120ms] hover:bg-accent-hover"
             onClick={doSave}
             disabled={save.isPending}
           >
@@ -66,7 +66,7 @@ function QualityPane({ post }: { post: MasterPostDetail }) {
   const [selectedHook, setSelectedHook] = useState(0);
 
   return (
-    <aside className="flex w-95 shrink-0 flex-col overflow-auto bg-surface-warm/40 p-4">
+    <aside className="flex w-[380px] shrink-0 flex-col overflow-auto bg-surface-warm/40 p-4">
       <div className="flex items-center gap-2 text-sm font-medium">
         <ShieldCheck size={16} className="text-accent" /> 去 AI 味质检
       </div>
@@ -86,7 +86,7 @@ function QualityPane({ post }: { post: MasterPostDetail }) {
           <li key={i}>
             <button
               onClick={() => setSelectedHook(i)}
-              className={`w-full rounded-[var(--radius-md)] border p-3 text-left text-sm transition-colors duration-120ms ${
+              className={`w-full rounded-[var(--radius-md)] border p-3 text-left text-sm transition-colors duration-[120ms] ${
                 i === selectedHook
                   ? 'border-accent bg-accent-soft/60'
                   : 'border-border bg-surface hover:border-accent'
@@ -114,7 +114,7 @@ function QualityPane({ post }: { post: MasterPostDetail }) {
 
       <Link
         to={`/preview/${post.id}`}
-        className="mt-6 rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-center text-sm text-fg-2 transition-colors duration-120ms hover:border-accent hover:text-accent"
+        className="mt-6 rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-center text-sm text-fg-2 transition-colors duration-[120ms] hover:border-accent hover:text-accent"
       >
         多端预览 →
       </Link>
@@ -170,10 +170,10 @@ export default function Studio() {
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') expand();
             }}
             placeholder="粘贴原始闪念，⌘Enter 展开…"
-            className="mt-2 h-24 w-full resize-none rounded-[var(--radius-sm)] border border-border bg-surface p-3 text-sm outline-none transition-colors duration-120ms focus:border-accent"
+            className="mt-2 h-24 w-full resize-none rounded-[var(--radius-sm)] border border-border bg-surface p-3 text-sm outline-none transition-colors duration-[120ms] focus:border-accent"
           />
           <button
-            className="mt-2 flex w-full items-center justify-center gap-1 rounded-[var(--radius-sm)] bg-accent px-3 py-2 text-sm font-medium text-accent-on transition-colors duration-120ms hover:bg-accent-hover disabled:opacity-50"
+            className="mt-2 flex w-full items-center justify-center gap-1 rounded-[var(--radius-sm)] bg-accent px-3 py-2 text-sm font-medium text-accent-on transition-colors duration-[120ms] hover:bg-accent-hover disabled:opacity-50"
             disabled={!idea.trim() || create.isPending}
             onClick={expand}
           >
@@ -205,7 +205,7 @@ export default function Studio() {
             <li key={p.id}>
               <button
                 onClick={() => setActiveId(p.id)}
-                className={`w-full rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm transition-colors duration-120ms ${
+                className={`w-full rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm transition-colors duration-[120ms] ${
                   (activePost?.id || '') === p.id ? 'bg-accent-soft/70 text-accent' : 'text-fg-2 hover:bg-surface-warm'
                 }`}
               >
@@ -225,7 +225,7 @@ export default function Studio() {
         </>
       ) : (
         <div className="flex flex-1 items-center justify-center">
-          <div className="max-w-360px rounded-[var(--radius-md)] border border-border bg-surface p-8 text-center">
+          <div className="max-w-[360px] rounded-[var(--radius-md)] border border-border bg-surface p-8 text-center">
             <Sparkles size={24} className="mx-auto text-accent" />
             <p className="mt-3 text-sm font-medium">从一条灵感开始</p>
             <p className="mt-1 text-xs leading-relaxed text-muted">

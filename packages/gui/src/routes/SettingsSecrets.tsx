@@ -45,7 +45,7 @@ function SecretRow({ item }: { item: SecretItem }) {
           </span>
         )}
         <button
-          className="rounded-[var(--radius-sm)] border border-border px-2 py-1 text-xs text-fg-2 transition-colors duration-120ms hover:border-accent hover:text-accent"
+          className="rounded-[var(--radius-sm)] border border-border px-2 py-1 text-xs text-fg-2 transition-colors duration-[120ms] hover:border-accent hover:text-accent"
           onClick={() => setEditing(!editing)}
         >
           {editing ? '取消' : '编辑'}
@@ -53,7 +53,7 @@ function SecretRow({ item }: { item: SecretItem }) {
         {item.exists && (
           <button
             aria-label={`删除 ${label}`}
-            className="rounded-[var(--radius-sm)] border border-border p-1.5 text-muted transition-colors duration-120ms hover:border-danger hover:text-danger"
+            className="rounded-[var(--radius-sm)] border border-border p-1.5 text-muted transition-colors duration-[120ms] hover:border-danger hover:text-danger"
             onClick={() => deleteSecret.mutate(item.key)}
           >
             <Trash2 size={14} />
@@ -68,7 +68,7 @@ function SecretRow({ item }: { item: SecretItem }) {
               type={show ? 'text' : 'password'}
               value={value}
               placeholder={`输入 ${label}（写入后加密存储，永不回显明文）`}
-              className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 pr-10 text-sm outline-none transition-colors duration-120ms focus:border-accent"
+              className="w-full rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 pr-10 text-sm outline-none transition-colors duration-[120ms] focus:border-accent"
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && save()}
             />
@@ -81,7 +81,7 @@ function SecretRow({ item }: { item: SecretItem }) {
             </button>
           </div>
           <button
-            className="flex items-center gap-1 rounded-[var(--radius-sm)] bg-accent px-3 py-2 text-sm font-medium text-accent-on transition-colors duration-120ms hover:bg-accent-hover disabled:opacity-50"
+            className="flex items-center gap-1 rounded-[var(--radius-sm)] bg-accent px-3 py-2 text-sm font-medium text-accent-on transition-colors duration-[120ms] hover:bg-accent-hover disabled:opacity-50"
             disabled={!value.trim() || setSecret.isPending}
             onClick={save}
           >
@@ -98,7 +98,7 @@ export default function SettingsSecrets() {
   const { data, isLoading, isError, error } = useSecrets();
 
   return (
-    <div className="mx-auto max-w-760px p-6">
+    <div className="mx-auto max-w-[760px] p-6">
       <h1 className="text-2xl font-semibold tracking-tight">密钥 / 配置中心</h1>
       <p className="mt-1 text-sm text-muted">
         所有密钥经 AES-256-GCM 加密存于本地 vault.enc，明文永不离开引擎进程。
