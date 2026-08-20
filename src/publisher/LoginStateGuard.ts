@@ -16,9 +16,15 @@ export interface LoginGuardOptions {
 export class LoginStateGuard {
   static async ensureLoggedIn(page: Page, options: LoginGuardOptions): Promise<boolean> {
     const timeout = options.timeoutMs || 120000;
-    const isLoginPage = await page.$(options.loginCheckSelector);
 
-    if (!isLoginPage) {
+    // 兼容「登录超时」等重定向登录页：页面文本命中关键提示即视为需登录
+    const pageText = (await page.evaluate(() => document.body?.innerText || '').catch(() => '')) as string;
+    const needsLogin =
+      (await page.$(options.loginCheckSelector).catch(() => null)) ||
+      pageText.includes('登录超时') ||
+      pageText.includes('请重新登录');
+
+    if (!needsLogin) {
       return true; // 登录态正常
     }
 

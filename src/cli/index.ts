@@ -7,6 +7,7 @@ import { DeepSeekAdapter } from '../llm/DeepSeekAdapter';
 import { TranspilerMatrix, TranspileTarget } from '../transpiler/TranspilerMatrix';
 import { CardRenderer } from '../renderer/CardRenderer';
 import { PublisherRegistry } from '../publisher';
+import { WeChatApiDriver } from '../publisher/WeChatApiDriver';
 import { WeChatCdpDriver } from '../publisher/WeChatCdpDriver';
 import { XCdpDriver } from '../publisher/XCdpDriver';
 import { XhsCdpDriver } from '../publisher/XhsCdpDriver';
@@ -156,6 +157,7 @@ program
     const notifier = process.env.FEISHU_WEBHOOK_URL ? new FeishuCardNotifier() : new ConsoleNotifier();
 
     const registry = new PublisherRegistry();
+    registry.register(new WeChatApiDriver());
     registry.register(new WeChatCdpDriver());
     registry.register(new XCdpDriver());
     registry.register(new XhsCdpDriver());

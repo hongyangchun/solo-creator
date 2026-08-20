@@ -1,6 +1,8 @@
-import { chromium, BrowserContext } from 'playwright';
-import { PlatformDriver, LoginStateGuard } from './index';
+import { Page } from 'playwright';
 import { PublishResult, ArticlePayload, UnifiedPayload } from '../types';
+import { PlatformDriver } from './PlatformDriver';
+import { LoginStateGuard } from './LoginStateGuard';
+import { acquireBrowserContext, releaseBrowser } from './browserLauncher';
 
 export class WeChatCdpDriver implements PlatformDriver {
   readonly id = 'wechat-cdp';
@@ -8,12 +10,10 @@ export class WeChatCdpDriver implements PlatformDriver {
   readonly driverType = 'cdp' as const;
   readonly priority = 2;
 
-  constructor(private cdpEndpoint: string = process.env.CHROME_CDP_ENDPOINT || 'http://127.0.0.1:9222') {}
-
   async isAvailable(): Promise<boolean> {
     try {
-      const browser = await chromium.connectOverCDP(this.cdpEndpoint, { timeout: 1500 });
-      await browser.close();
+      const { browser, mode } = await acquireBrowserContext();
+      await releaseBrowser({ browser, context: browser.contexts()[0], mode });
       return true;
     } catch {
       return false;
@@ -26,33 +26,33 @@ export class WeChatCdpDriver implements PlatformDriver {
 
   async publish(payload: UnifiedPayload): Promise<PublishResult> {
     const article = payload as ArticlePayload;
-    const browser = await chromium.connectOverCDP(this.cdpEndpoint);
-    const context: BrowserContext = browser.contexts()[0] || (await browser.newContext());
-    const page = await context.newPage();
+    const acquired = await acquireBrowserContext();
+    const page: Page = await acquired.context.newPage();
 
     try {
       await page.goto('https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&isNew=1&type=10', {
         waitUntil: 'domcontentloaded'
       });
+      await page.waitForTimeout(3000);
 
-      // 登录态守卫：失效则阻塞等待扫码
       await LoginStateGuard.ensureLoggedIn(page, {
         loginCheckSelector: '.login__type__container__scan',
         qrCodeSelector: '.login__type__container__scan__qrcode',
         successRedirectUrlPart: 'mp.weixin.qq.com/cgi-bin/home'
       });
 
-      await page.fill('#title', article.title);
+      const titleFilled = await this.fillTitle(page, article.title);
+      if (!titleFilled) {
+        throw new Error('未能定位微信标题输入框，请检查公众平台后台版本');
+      }
 
-      await page.evaluate((html) => {
-        const ueditor = (globalThis as any).UE?.getEditor('js_editor');
-        if (ueditor) {
-          ueditor.setContent(html);
-        }
-      }, article.htmlContent);
+      await this.setBody(page, article.htmlContent);
+      await page.waitForTimeout(1000);
 
-      await page.click('#js_send');
-      await page.waitForSelector('.weui-desktop-toast', { timeout: 5000 });
+      const saveBtn = page.locator('#js_send, .btn_sure, a:has-text("保存")').first();
+      await saveBtn.click();
+      await page.waitForSelector('.weui-desktop-toast', { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1500);
 
       return {
         success: true,
@@ -75,7 +75,42 @@ export class WeChatCdpDriver implements PlatformDriver {
       };
     } finally {
       await page.close();
-      await browser.close();
+      await releaseBrowser(acquired);
+    }
+  }
+
+  private async fillTitle(page: Page, title: string): Promise<boolean> {
+    const selectors = ['#title', '#js_title', 'input.title_input', 'input[placeholder*="标题"]', 'textarea#title'];
+    for (const sel of selectors) {
+      try {
+        const el = page.locator(sel).first();
+        if (await el.count()) {
+          await el.fill(title);
+          return true;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  private async setBody(page: Page, html: string): Promise<void> {
+    const injected = await page.evaluate((content) => {
+      const ueditor = (globalThis as any).UE?.getEditor('js_editor');
+      if (ueditor && typeof ueditor.setContent === 'function') {
+        ueditor.setContent(content);
+        return true;
+      }
+      const editable = document.querySelector('#js_editor, .edui-body-container, [contenteditable="true"]') as HTMLElement | null;
+      if (editable) {
+        editable.innerHTML = content;
+        return true;
+      }
+      return false;
+    }, html);
+    if (!injected) {
+      console.warn('[WeChatCdpDriver] 正文注入失败（UEditor / contenteditable 均未命中），仅保存了标题');
     }
   }
 }
