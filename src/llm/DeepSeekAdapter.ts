@@ -1,4 +1,5 @@
 import { LlmAdapter, ChatMessage, LlmChatOptions, LlmTaskQueue } from './LlmAdapter';
+import { LocalKeyVault } from '../storage/LocalKeyVault';
 
 const DEFAULT_BASE_URL = 'https://api.deepseek.com/v1';
 const MODEL = 'deepseek-chat';
@@ -6,12 +7,23 @@ const MODEL = 'deepseek-chat';
 export class DeepSeekAdapter implements LlmAdapter {
   readonly id = 'deepseek';
   private queue = new LlmTaskQueue(2, 3);
+  private apiKey?: string;
 
   constructor(
-    private apiKey?: string,
+    apiKey?: string,
     private baseUrl: string = process.env.DEEPSEEK_BASE_URL || DEFAULT_BASE_URL
   ) {
-    this.apiKey = apiKey || process.env.DEEPSEEK_API_KEY;
+    // 密钥解析顺序：显式参数 → LocalKeyVault 保险箱。
+    // Spec §3：不再回退 process.env.DEEPSEEK_API_KEY（密钥统一经保险箱，GUI 才能接管）。
+    this.apiKey = apiKey || DeepSeekAdapter.resolveKeyFromVault();
+  }
+
+  private static resolveKeyFromVault(): string | undefined {
+    try {
+      return new LocalKeyVault().getSecret('DEEPSEEK_API_KEY') ?? undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async isAvailable(): Promise<boolean> {

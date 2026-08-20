@@ -144,6 +144,43 @@ export class SQLiteStorage {
     this.db.prepare('INSERT OR REPLACE INTO persona_memory (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
   }
 
+  // ===== GUI engineServer 增量查询（Spec §2.3，只读/追加，不改既有逻辑）=====
+
+  listMasterPosts(page = 1, pageSize = 20): { total: number; items: any[] } {
+    const total = (this.db.prepare('SELECT COUNT(*) AS c FROM master_posts').get() as any).c;
+    const rows = this.db
+      .prepare('SELECT id, title, raw_idea, status, created_at, updated_at FROM master_posts ORDER BY updated_at DESC LIMIT ? OFFSET ?')
+      .all(pageSize, (page - 1) * pageSize);
+    return { total, items: rows as any[] };
+  }
+
+  updateMasterPost(id: string, patch: { title?: string; masterMarkdown?: string }): boolean {
+    const current = this.getMasterPost(id);
+    if (!current) return false;
+    const stmt = this.db.prepare(
+      'UPDATE master_posts SET title = ?, master_markdown = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    );
+    stmt.run(patch.title ?? current.title, patch.masterMarkdown ?? current.masterMarkdown, id);
+    return true;
+  }
+
+  deleteMasterPost(id: string): boolean {
+    const res = this.db.prepare('DELETE FROM master_posts WHERE id = ?').run(id);
+    return res.changes > 0;
+  }
+
+  getDispatchesByMaster(masterId: string): any[] {
+    return this.db.prepare('SELECT * FROM channel_dispatches WHERE master_id = ? ORDER BY dispatched_at DESC').all(masterId) as any[];
+  }
+
+  getDispatchById(dispatchId: string): any | null {
+    return this.db.prepare('SELECT * FROM channel_dispatches WHERE id = ?').get(dispatchId) ?? null;
+  }
+
+  listAllDispatches(limit = 200): any[] {
+    return this.db.prepare('SELECT * FROM channel_dispatches ORDER BY dispatched_at DESC LIMIT ?').all(limit) as any[];
+  }
+
   close(): void {
     this.db.close();
   }

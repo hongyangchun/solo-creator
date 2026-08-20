@@ -29,6 +29,10 @@ export class CardRenderer {
     }
   };
 
+  static getTheme(name: 'minimal_dark' | 'notion_light') {
+    return this.THEMES[name];
+  }
+
   static async renderCardFlow(payload: CardFlowPayload, options: RenderOptions = {}): Promise<string[]> {
     const theme = this.THEMES[options.theme || 'minimal_dark'];
     const scaleFactor = options.deviceScaleFactor || 2;
@@ -64,7 +68,8 @@ export class CardRenderer {
     return generatedPaths;
   }
 
-  private static buildCardHtml(
+  // public：engineServer card-preview 端点直接复用（webview 渲染，不经 Playwright — ADR-003）
+  static buildCardHtml(
     theme: { bg: string; textColor: string; accent: string; fontFamily: string },
     title: string,
     content: string,
