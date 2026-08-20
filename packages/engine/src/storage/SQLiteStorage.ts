@@ -113,10 +113,11 @@ export class SQLiteStorage {
     status: string;
     draftId?: string;
     previewUrl?: string;
+    errorLog?: string;
   }): void {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO channel_dispatches (id, master_id, channel, payload_type, payload_json, driver_used, dispatch_status, draft_id, preview_url, dispatched_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT OR REPLACE INTO channel_dispatches (id, master_id, channel, payload_type, payload_json, driver_used, dispatch_status, draft_id, preview_url, error_log, dispatched_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `);
     stmt.run(
       record.id,
@@ -127,7 +128,8 @@ export class SQLiteStorage {
       record.driverUsed || 'cdp',
       record.status,
       record.draftId || null,
-      record.previewUrl || null
+      record.previewUrl || null,
+      record.errorLog || null
     );
   }
 

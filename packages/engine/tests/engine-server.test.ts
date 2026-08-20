@@ -168,4 +168,91 @@ describe('engineServer HTTP 契约（Spec §2）', () => {
     const { json } = await request('GET', '/api/v1/nonexistent');
     expect(json.code).toBe(404);
   });
+
+  // ===== 发布链路渠道级容错契约（回归 #7/#8/#9）=====
+  // 测试环境无微信密钥、无可用 CDP 浏览器，两条失败路径正好互补：
+  //  - wechat：API 驱动密钥缺失跳过 + CDP 驱动探测失败 → registry 返回结构化失败（不 throw）
+  //  - weibo：无任何注册驱动 → registry 直接 throw → engineServer catch 兜底落库（#8 核心路径）
+  describe('发布渠道级容错（回归 #7/#8/#9）', () => {
+    let retryDispatchId = '';
+    let savedCdpEndpoint: string | undefined;
+    let savedEdgePath: string | undefined;
+
+    beforeAll(() => {
+      // 隔离浏览器环境：CDP 指向必拒端口、Edge 指向不存在路径，
+      // 使 CDP 驱动 isAvailable() 确定性快速返回 false，绝不拉起真实浏览器窗口
+      savedCdpEndpoint = process.env.CHROME_CDP_ENDPOINT;
+      savedEdgePath = process.env.EDGE_PATH;
+      process.env.CHROME_CDP_ENDPOINT = 'http://127.0.0.1:1';
+      process.env.EDGE_PATH = '/nonexistent/solo-creator-qa-test-edge';
+    });
+
+    afterAll(() => {
+      if (savedCdpEndpoint === undefined) delete process.env.CHROME_CDP_ENDPOINT;
+      else process.env.CHROME_CDP_ENDPOINT = savedCdpEndpoint;
+      if (savedEdgePath === undefined) delete process.env.EDGE_PATH;
+      else process.env.EDGE_PATH = savedEdgePath;
+    });
+
+    it('A+B: publish 含不支持渠道不 500，逐渠道落库 failed 且 error_log 非空', async () => {
+      // Arrange：先造一篇母稿（离线降级可成功）
+      const created = await request('POST', '/api/v1/master', { idea: '发布容错契约验证', topic: '自媒体创作' });
+      expect(created.json.code).toBe(0);
+      expect(created.json.data.id).toMatch(/^M-/);
+      const masterId: string = created.json.data.id;
+
+      // Act：发布到 wechat（驱动全不可用）+ weibo（无驱动触发 throw）
+      const pub = await request('POST', `/api/v1/master/${masterId}/publish`, {
+        channels: ['wechat', 'weibo'],
+        draftOnly: true
+      });
+
+      // Assert：HTTP 200 + code:0，绝不能 500
+      expect(pub.status).toBe(200);
+      expect(pub.json.code).toBe(0);
+      expect(pub.json.data.results).toHaveLength(2);
+
+      const byChannel: Record<string, any> = {};
+      for (const r of pub.json.data.results) byChannel[r.channel] = r;
+
+      // weibo：engineServer catch 兜底构造的结构化失败（#8），形状完整
+      expect(byChannel.weibo.success).toBe(false);
+      expect(byChannel.weibo.driverId).toBe('none');
+      expect(byChannel.weibo.errorMessage).toContain('没有可用');
+
+      // wechat：API 无密钥跳过 + CDP 探测失败 → registry 结构化失败，字段完整
+      expect(byChannel.wechat.success).toBe(false);
+      expect(byChannel.wechat.driverId).toBe('none');
+      expect(byChannel.wechat.mode).toBe('draft');
+      expect(byChannel.wechat.errorMessage).toBeTruthy();
+
+      // 落库：两条 failed 记录都在（catch 路径与 return 路径都要落库）
+      const dispatches = await request('GET', `/api/v1/master/${masterId}/dispatch`);
+      expect(dispatches.json.code).toBe(0);
+      expect(dispatches.json.data).toHaveLength(2);
+      const wechatRec = dispatches.json.data.find((r: any) => r.channel === 'wechat');
+      const weiboRec = dispatches.json.data.find((r: any) => r.channel === 'weibo');
+      expect(wechatRec).toBeTruthy();
+      expect(weiboRec).toBeTruthy();
+      expect(wechatRec.dispatch_status).toBe('failed');
+      expect(weiboRec.dispatch_status).toBe('failed');
+
+      // B：失败记录 error_log 非空（GUI「展开日志」的数据源，#9）
+      expect(String(wechatRec.error_log ?? '').length).toBeGreaterThan(0);
+      expect(String(weiboRec.error_log ?? '').length).toBeGreaterThan(0);
+
+      retryDispatchId = weiboRec.id; // 供测试 C
+    }, 15000);
+
+    it('C: retry 失败渠道返回结构化结果不 500', async () => {
+      if (!retryDispatchId) throw new Error('前置失败：未拿到测试 A 落库的 dispatch id');
+      const retry = await request('POST', `/api/v1/dispatch/${retryDispatchId}/retry`);
+      expect(retry.status).toBe(200);
+      expect(retry.json.code).toBe(0);
+      expect(retry.json.data).toBeTypeOf('object');
+      expect(retry.json.data.success).toBe(false);
+      expect(retry.json.data.driverId).toBe('none');
+      expect(String(retry.json.data.errorMessage ?? '').length).toBeGreaterThan(0);
+    }, 15000);
+  });
 });

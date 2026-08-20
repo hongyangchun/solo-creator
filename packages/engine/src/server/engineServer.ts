@@ -9,7 +9,10 @@ import { TranspilerMatrix, TranspileTarget } from '../transpiler/TranspilerMatri
 import { CardRenderer } from '../renderer/CardRenderer';
 import { PublisherRegistry } from '../publisher';
 import { WeChatApiDriver } from '../publisher/WeChatApiDriver';
-import { ChannelType, MasterPost, UnifiedPayload } from '../types';
+import { WeChatCdpDriver } from '../publisher/WeChatCdpDriver';
+import { XCdpDriver } from '../publisher/XCdpDriver';
+import { XhsCdpDriver } from '../publisher/XhsCdpDriver';
+import { ChannelType, MasterPost, PublishResult, UnifiedPayload } from '../types';
 
 const PORT = Number(process.env.ENGINE_PORT || 39281);
 const VERSION = '0.1.0';
@@ -124,6 +127,9 @@ async function runRenderJob(masterId: string, theme: 'minimal_dark' | 'notion_li
 function buildRegistry(): PublisherRegistry {
   const registry = new PublisherRegistry();
   registry.register(new WeChatApiDriver());
+  registry.register(new WeChatCdpDriver());
+  registry.register(new XCdpDriver());
+  registry.register(new XhsCdpDriver());
   return registry;
 }
 
@@ -291,11 +297,26 @@ export function startEngineServer(port: number = PORT): http.Server {
           const ch = list[i] as ChannelType;
           const target = targetFor(ch);
           if (!target) {
-            results.push({ channel: ch, success: false, errorMessage: `不支持渠道: ${ch}` });
+            results.push({ channel: ch, success: false, driverId: 'none', mode: 'draft', errorMessage: `不支持渠道: ${ch}` });
             continue;
           }
           const payload = TranspilerMatrix.transpile(post, target);
-          const result = await registry.dispatch(ch, payload, { draftOnly: Boolean(draftOnly) });
+          // 渠道级容错：单渠道异常（如无可用驱动 throw）不再拖垮整个发布请求，
+          // 落库为 failed 记录并继续后续渠道
+          let result: PublishResult;
+          try {
+            result = await registry.dispatch(ch, payload, { draftOnly: Boolean(draftOnly) });
+          } catch (err: any) {
+            result = {
+              success: false,
+              channel: ch,
+              driverId: 'none',
+              driverType: 'cdp',
+              mode: 'draft',
+              errorMessage: err.message,
+              timestamp: new Date().toISOString()
+            };
+          }
           results.push(result);
           storage.saveDispatchRecord({
             id: `D-${Date.now()}-${i}`,
@@ -306,11 +327,13 @@ export function startEngineServer(port: number = PORT): http.Server {
             driverUsed: result.driverId,
             status: result.success ? 'drafted' : 'failed',
             draftId: result.draftId,
-            previewUrl: result.previewUrl
+            previewUrl: result.previewUrl,
+            errorLog: result.success ? undefined : result.errorMessage
           });
           job.progress = i + 1;
           job.message = `${ch}: ${result.success ? '草稿已存' : result.errorMessage}`;
         }
+        // 部分渠道失败也算 job 完成：逐渠道结果在 results 中体现
         job.status = 'done';
         return ok({ jobId: job.id, results }, res);
       }
@@ -335,7 +358,22 @@ export function startEngineServer(port: number = PORT): http.Server {
         const target = targetFor(record.channel);
         if (!target) return fail(422, `不支持渠道: ${record.channel}`, res);
         const payload = TranspilerMatrix.transpile(post, target);
-        const result = await buildRegistry().dispatch(record.channel as ChannelType, payload, { draftOnly: true });
+        // 与 publish 循环一致的渠道级容错：dispatch 异常落库 failed + errorLog，
+        // 返回结构化 result 而非 500
+        let result: PublishResult;
+        try {
+          result = await buildRegistry().dispatch(record.channel as ChannelType, payload, { draftOnly: true });
+        } catch (err: any) {
+          result = {
+            success: false,
+            channel: record.channel as ChannelType,
+            driverId: 'none',
+            driverType: 'cdp',
+            mode: 'draft',
+            errorMessage: err.message,
+            timestamp: new Date().toISOString()
+          };
+        }
         storage.saveDispatchRecord({
           id: record.id,
           masterId: record.master_id,
@@ -345,7 +383,8 @@ export function startEngineServer(port: number = PORT): http.Server {
           driverUsed: result.driverId,
           status: result.success ? 'drafted' : 'failed',
           draftId: result.draftId,
-          previewUrl: result.previewUrl
+          previewUrl: result.previewUrl,
+          errorLog: result.success ? undefined : result.errorMessage
         });
         return ok(result, res);
       }
