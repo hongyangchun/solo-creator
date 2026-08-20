@@ -8,6 +8,9 @@ import { TranspilerMatrix, TranspileTarget } from '../transpiler/TranspilerMatri
 import { CardRenderer } from '../renderer/CardRenderer';
 import { PublisherRegistry } from '../publisher';
 import { WeChatCdpDriver } from '../publisher/WeChatCdpDriver';
+import { XCdpDriver } from '../publisher/XCdpDriver';
+import { XhsCdpDriver } from '../publisher/XhsCdpDriver';
+import { FeishuCardNotifier, ConsoleNotifier } from '../notifier/NotifierPlugin';
 import { MasterPost, ChannelType } from '../types';
 
 const program = new Command();
@@ -149,8 +152,20 @@ program
       process.exit(1);
     }
 
+    // 通知器：飞书卡片优先，未配置 webhook 时静默降级为控制台
+    const notifier = process.env.FEISHU_WEBHOOK_URL ? new FeishuCardNotifier() : new ConsoleNotifier();
+
     const registry = new PublisherRegistry();
     registry.register(new WeChatCdpDriver());
+    registry.register(new XCdpDriver());
+    registry.register(new XhsCdpDriver());
+
+    const formatMap: Record<string, string> = {
+      wechat: 'article',
+      xiaohongshu: 'card_flow',
+      x: 'thread',
+      weibo: 'short_text'
+    };
 
     const channels = opts.channels.split(',') as ChannelType[];
     for (const channel of channels) {
@@ -161,9 +176,17 @@ program
         continue;
       }
 
-      const payload = TranspilerMatrix.transpile(masterPost, { channel, format: 'article' } as TranspileTarget);
+      const payload = TranspilerMatrix.transpile(masterPost, { channel, format: formatMap[channel] } as TranspileTarget);
       const result = await registry.dispatch(channel, payload, { draftOnly: true });
       console.log(`\n${result.success ? '✅' : '❌'} [${channel}] ${result.success ? `草稿已存入 (${result.previewUrl})` : `失败: ${result.errorMessage}`}`);
+
+      // 通知：成功推飞书卡片，失败推控制台告警
+      await notifier.notify({
+        event: result.success
+          ? { kind: 'draft_ready', channel, previewUrl: result.previewUrl, title: masterPost.title }
+          : { kind: 'dispatch_failed', channel, error: result.errorMessage || '未知错误' },
+        timestamp: new Date().toISOString()
+      });
 
       storage.saveDispatchRecord({
         id: `D-${Date.now()}-${channel}`,
@@ -177,6 +200,10 @@ program
         previewUrl: result.previewUrl
       });
     }
+    await notifier.notify({
+      event: { kind: 'pipeline_done', masterId: masterPost.id, summary: `母稿《${masterPost.title}》全渠道分发流程结束` },
+      timestamp: new Date().toISOString()
+    });
     storage.close();
   });
 
