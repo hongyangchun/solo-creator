@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:tauri": "pnpm -F @solo-creator/content-os build:server && pnpm dev",
     "build": "tsc --noEmit && vite build",
+    "build:tauri": "pnpm -F @solo-creator/content-os build:server && pnpm build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit"
   },
