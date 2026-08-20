@@ -12,6 +12,7 @@ import { WeChatCdpDriver } from '../publisher/WeChatCdpDriver';
 import { XCdpDriver } from '../publisher/XCdpDriver';
 import { XhsCdpDriver } from '../publisher/XhsCdpDriver';
 import { FeishuCardNotifier, ConsoleNotifier } from '../notifier/NotifierPlugin';
+import { LocalKeyVault } from '../storage/LocalKeyVault';
 import { MasterPost, ChannelType } from '../types';
 
 const program = new Command();
@@ -207,6 +208,35 @@ program
       timestamp: new Date().toISOString()
     });
     storage.close();
+  });
+
+// ============ config 命令 ============
+const config = program.command('config').description('本地加密凭据管理');
+
+config
+  .command('set-secret')
+  .description('将敏感密钥安全写入本地加密保险箱 (AES-256-GCM，不进 git)')
+  .requiredOption('--key <key>', '密钥名，如 WECHAT_APP_ID / WECHAT_APP_SECRET / DEEPSEEK_API_KEY')
+  .requiredOption('--value <value>', '密钥值')
+  .action((opts) => {
+    const vault = new LocalKeyVault();
+    vault.setSecret(opts.key, opts.value);
+    console.log(`\n🔐 已加密写入: ${opts.key}（存储于 ~/.solo-creator/vault.enc，明文永不落盘）`);
+  });
+
+config
+  .command('get-secret')
+  .description('读取已存储的密钥（仅显示末 4 位，用于确认）')
+  .requiredOption('--key <key>', '密钥名')
+  .action((opts) => {
+    const vault = new LocalKeyVault();
+    const val = vault.getSecret(opts.key);
+    if (!val) {
+      console.log(`❌ 未找到密钥: ${opts.key}`);
+      return;
+    }
+    const masked = val.length > 4 ? `${'*'.repeat(val.length - 4)}${val.slice(-4)}` : '****';
+    console.log(`🔑 ${opts.key} = ${masked}`);
   });
 
 program.parse(process.argv);
