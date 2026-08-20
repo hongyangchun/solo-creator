@@ -80,7 +80,7 @@ export class WeChatCdpDriver implements PlatformDriver {
   readonly driverType = 'cdp';
   readonly priority = 2;         // 次于官方 API 优先级
 
-  constructor(private cdpEndpoint: string = 'http://127.0.0.1:9222') {}
+  constructor(private cdpEndpoint: string = 'http://127.0.0.1:9333') {}
 
   async isAvailable(): Promise<boolean> {
     try {

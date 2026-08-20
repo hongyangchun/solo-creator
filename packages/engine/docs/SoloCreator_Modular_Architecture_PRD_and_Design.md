@@ -441,7 +441,7 @@ theme:
 
 # 4. 本地浏览器 CDP 驱动配置
 browser:
-  cdpEndpoint: "http://127.0.0.1:9222"
+  cdpEndpoint: "http://127.0.0.1:9333"
   headless: false
   autoSaveDraft: true              # 坚决只存草稿
 

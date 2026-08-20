@@ -13,13 +13,21 @@ export class XCdpDriver implements PlatformDriver {
   readonly driverType = 'cdp' as const;
   readonly priority = 2;
 
-  constructor(private cdpEndpoint: string = process.env.CHROME_CDP_ENDPOINT || 'http://127.0.0.1:9222') {}
+  constructor(private cdpEndpoint: string = process.env.CHROME_CDP_ENDPOINT || 'http://127.0.0.1:9333') {}
 
   async isAvailable(): Promise<boolean> {
+    // 可用性判定 = 能连接 + 能真实开页。
+    // 端口被 Electron 等非调试浏览器占用时，connectOverCDP 能成功但 newPage 会抛错，必须排除。
     try {
       const browser = await chromium.connectOverCDP(this.cdpEndpoint, { timeout: 1500 });
-      await browser.close();
-      return true;
+      try {
+        const ctx = browser.contexts()[0] || (await browser.newContext());
+        const page = await ctx.newPage();
+        await page.close();
+        return true;
+      } finally {
+        await browser.close().catch(() => undefined);
+      }
     } catch {
       return false;
     }
