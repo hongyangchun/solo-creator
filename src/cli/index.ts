@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { SQLiteStorage } from '../storage/SQLiteStorage';
 import { HumanizerZhCritic } from '../critic/HumanizerZhCritic';
 import { HookGeneratorService } from '../critic/HookGeneratorService';
+import { MasterContentService } from '../critic/MasterContentService';
+import { DeepSeekAdapter } from '../llm/DeepSeekAdapter';
 import { TranspilerMatrix, TranspileTarget } from '../transpiler/TranspilerMatrix';
 import { CardRenderer } from '../renderer/CardRenderer';
 import { PublisherRegistry } from '../publisher';
@@ -20,31 +22,48 @@ const master = program.command('master').description('母稿生成与质检');
 
 master
   .command('create')
-  .description('从灵感生成母稿（含 5 类 Hook 与去 AI 味质检）')
+  .description('从灵感生成母稿（LLM 展开长文 + 5 类 Hook + 去 AI 味质检）')
   .requiredOption('--idea <idea>', '原始灵感文本')
   .option('--topic <topic>', '主题标签', '自媒体创作')
+  .option('--offline', '跳过 LLM，使用离线规则模式', false)
   .action(async (opts) => {
     const storage = new SQLiteStorage();
 
-    const hooks = HookGeneratorService.generateHooks(opts.topic, opts.idea);
-    const criticResult = HumanizerZhCritic.evaluate(opts.idea);
+    // LLM 优先 + 离线自动降级
+    const llm = new DeepSeekAdapter();
+    const masterService = new MasterContentService(llm);
 
-    const masterPost: MasterPost = {
-      id: `M-${Date.now()}`,
-      rawIdea: opts.idea,
-      title: opts.idea.slice(0, 30),
-      hookCandidates: hooks.map((h) => ({ type: h.type, hookText: h.hookText })),
-      masterMarkdown: criticResult.purifiedContent,
-      keyTakeaways: [opts.idea],
-      suggestedTags: [opts.topic, '一人工作室'],
-      createdAt: new Date().toISOString()
-    };
+    const masterPost = await masterService.createMasterPost(opts.idea, opts.topic);
+    const criticResult = HumanizerZhCritic.evaluate(masterPost.masterMarkdown);
+    const hooks = HookGeneratorService.generateHooks(opts.topic, opts.idea);
 
     storage.saveMasterPost(masterPost);
+    const llmStatus = await llm.isAvailable();
     console.log(`\n✅ 母稿已生成并存入本地 SQLite: ${masterPost.id}`);
+    console.log(`   生成模式: ${llmStatus ? 'LLM 深度展开 (DeepSeek)' : '离线规则模式 (未配置 DEEPSEEK_API_KEY)'}`);
+    console.log(`\n📝 标题: ${masterPost.title}`);
     console.log(`\n📋 5 类黄金 Hook 候选:`);
     hooks.forEach((h, i) => console.log(`  ${i + 1}. [${h.type}] ${h.hookText}`));
     console.log(`\n🛡️ 去 AI 味质检得分: ${criticResult.score}/100 ${criticResult.passed ? '(通过)' : '(未通过，已自动替换八股词)'}`);
+    console.log(`\n💡 核心要点:`);
+    masterPost.keyTakeaways.forEach((t, i) => console.log(`  ${i + 1}. ${t}`));
+    storage.close();
+  });
+
+// ============ master show ============
+master
+  .command('show')
+  .description('查看母稿全文')
+  .requiredOption('--master-id <masterId>', '母稿 ID')
+  .action((opts) => {
+    const storage = new SQLiteStorage();
+    const post = storage.getMasterPost(opts.masterId);
+    if (!post) {
+      console.error(`❌ 未找到母稿: ${opts.masterId}`);
+      process.exit(1);
+    }
+    console.log(`\n# ${post.title}\n`);
+    console.log(post.masterMarkdown);
     storage.close();
   });
 
