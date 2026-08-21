@@ -41,7 +41,14 @@ export const engine = {
   publish: (id: string, channels: string[]) => request<{ jobId: string; results: PublishResultItem[] }>('POST', `/master/${id}/publish`, { channels, draftOnly: true }),
   dispatches: (id: string) => request<DispatchRecord[]>('GET', `/master/${id}/dispatch`),
   dashboard: () => request<{ masters: MasterListItem[]; dispatches: DispatchRecord[] }>('GET', '/dashboard'),
-  retryDispatch: (id: string) => request<PublishResultItem>('POST', `/dispatch/${id}/retry`)
+  retryDispatch: (id: string) => request<PublishResultItem>('POST', `/dispatch/${id}/retry`),
+  // ⑤ 数据复盘（含 analytics API）
+  listAnalytics: () => request<AnalyticsListResponse>('GET', '/analytics'),
+  getAnalytics: (dispatchId: string) => request<AnalyticsListItem>('GET', `/analytics/${dispatchId}`),
+  upsertAnalytics: (dispatchId: string, body: UpsertAnalyticsBody) =>
+    request<AnalyticsListItem>('PUT', `/analytics/${dispatchId}`, body),
+  refreshAnalytics: (dispatchId: string) =>
+    request<RefreshAnalyticsResult>('POST', `/analytics/${dispatchId}/refresh`)
 };
 
 export function subscribeJob(jobId: string, onEvent: (job: JobProgress) => void): () => void {
@@ -120,4 +127,39 @@ export interface JobProgress {
   status: 'running' | 'done' | 'failed';
   message: string;
   result?: { imagePaths?: string[] };
+}
+
+/** 基础指标（与 post_analytics 列对齐） */
+export interface AnalyticsMetrics {
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  collected: number;
+}
+
+export type UpsertAnalyticsBody = AnalyticsMetrics;
+
+/** 列表/详情共用行（dispatch 驱动 LEFT JOIN） */
+export interface AnalyticsListItem {
+  dispatchId: string;
+  masterId: string;
+  channel: string;
+  title: string;
+  publishedAt: string | null;
+  metrics: AnalyticsMetrics | null;
+  fetchedAt: string | null;
+  analyticsId: string | null;
+}
+
+export type AnalyticsDetail = AnalyticsListItem;
+
+export interface RefreshAnalyticsResult extends AnalyticsListItem {
+  mode: 'placeholder';
+  created: boolean;
+}
+
+export interface AnalyticsListResponse {
+  total: number;
+  items: AnalyticsListItem[];
 }

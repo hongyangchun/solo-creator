@@ -70,6 +70,8 @@ export class SQLiteStorage {
         value TEXT NOT NULL,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_post_analytics_dispatch ON post_analytics(dispatch_id);
     `);
   }
 
@@ -181,6 +183,203 @@ export class SQLiteStorage {
 
   listAllDispatches(limit = 200): any[] {
     return this.db.prepare('SELECT * FROM channel_dispatches ORDER BY dispatched_at DESC LIMIT ?').all(limit) as any[];
+  }
+
+  // ===== Analytics Retro MVP（dispatch 驱动 LEFT JOIN，禁止触发 publish）=====
+
+  upsertPostAnalytics(
+    dispatchId: string,
+    metrics: { views: number; likes: number; comments: number; shares: number; collected: number },
+    analyticsId?: string
+  ): {
+    dispatchId: string;
+    masterId: string;
+    channel: string;
+    title: string;
+    publishedAt: string | null;
+    metrics: { views: number; likes: number; comments: number; shares: number; collected: number };
+    fetchedAt: string | null;
+    analyticsId: string | null;
+  } | null {
+    const dispatch = this.getDispatchById(dispatchId);
+    if (!dispatch) return null;
+
+    const existing = this.db
+      .prepare('SELECT id FROM post_analytics WHERE dispatch_id = ? ORDER BY fetched_at DESC LIMIT 1')
+      .get(dispatchId) as { id: string } | undefined;
+
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE post_analytics
+           SET views = ?, likes = ?, comments = ?, shares = ?, collected = ?, fetched_at = CURRENT_TIMESTAMP
+           WHERE id = ?`
+        )
+        .run(metrics.views, metrics.likes, metrics.comments, metrics.shares, metrics.collected, existing.id);
+    } else {
+      const id = analyticsId || `A-${Date.now()}`;
+      this.db
+        .prepare(
+          `INSERT INTO post_analytics (id, dispatch_id, views, likes, comments, shares, collected, fetched_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+        )
+        .run(id, dispatchId, metrics.views, metrics.likes, metrics.comments, metrics.shares, metrics.collected);
+    }
+
+    const item = this.getAnalyticsByDispatch(dispatchId);
+    if (!item || !item.metrics) return null;
+    return { ...item, metrics: item.metrics };
+  }
+
+  getAnalyticsByDispatch(dispatchId: string): {
+    dispatchId: string;
+    masterId: string;
+    channel: string;
+    title: string;
+    publishedAt: string | null;
+    metrics: { views: number; likes: number; comments: number; shares: number; collected: number } | null;
+    fetchedAt: string | null;
+    analyticsId: string | null;
+  } | null {
+    const row = this.db
+      .prepare(
+        `SELECT
+           cd.id AS dispatch_id,
+           cd.master_id AS master_id,
+           cd.channel AS channel,
+           cd.dispatched_at AS published_at,
+           mp.title AS title,
+           pa.id AS analytics_id,
+           pa.views AS views,
+           pa.likes AS likes,
+           pa.comments AS comments,
+           pa.shares AS shares,
+           pa.collected AS collected,
+           pa.fetched_at AS fetched_at
+         FROM channel_dispatches cd
+         LEFT JOIN master_posts mp ON mp.id = cd.master_id
+         LEFT JOIN post_analytics pa ON pa.id = (
+           SELECT id FROM post_analytics WHERE dispatch_id = cd.id ORDER BY fetched_at DESC LIMIT 1
+         )
+         WHERE cd.id = ?`
+      )
+      .get(dispatchId) as any;
+
+    if (!row) return null;
+    return this.mapAnalyticsRow(row);
+  }
+
+  listAnalyticsJoined(limit = 200): {
+    total: number;
+    items: Array<{
+      dispatchId: string;
+      masterId: string;
+      channel: string;
+      title: string;
+      publishedAt: string | null;
+      metrics: { views: number; likes: number; comments: number; shares: number; collected: number } | null;
+      fetchedAt: string | null;
+      analyticsId: string | null;
+    }>;
+  } {
+    const total = (this.db.prepare('SELECT COUNT(*) AS c FROM channel_dispatches').get() as any).c as number;
+    const rows = this.db
+      .prepare(
+        `SELECT
+           cd.id AS dispatch_id,
+           cd.master_id AS master_id,
+           cd.channel AS channel,
+           cd.dispatched_at AS published_at,
+           mp.title AS title,
+           pa.id AS analytics_id,
+           pa.views AS views,
+           pa.likes AS likes,
+           pa.comments AS comments,
+           pa.shares AS shares,
+           pa.collected AS collected,
+           pa.fetched_at AS fetched_at
+         FROM channel_dispatches cd
+         LEFT JOIN master_posts mp ON mp.id = cd.master_id
+         LEFT JOIN post_analytics pa ON pa.id = (
+           SELECT id FROM post_analytics WHERE dispatch_id = cd.id ORDER BY fetched_at DESC LIMIT 1
+         )
+         ORDER BY COALESCE(cd.dispatched_at, '') DESC
+         LIMIT ?`
+      )
+      .all(limit) as any[];
+
+    return { total, items: rows.map((row) => this.mapAnalyticsRow(row)) };
+  }
+
+  refreshAnalyticsPlaceholder(dispatchId: string): {
+    dispatchId: string;
+    masterId: string;
+    channel: string;
+    title: string;
+    publishedAt: string | null;
+    metrics: { views: number; likes: number; comments: number; shares: number; collected: number } | null;
+    fetchedAt: string | null;
+    analyticsId: string | null;
+    mode: 'placeholder';
+    created: boolean;
+  } | null {
+    const dispatch = this.getDispatchById(dispatchId);
+    if (!dispatch) return null;
+
+    const existing = this.db
+      .prepare('SELECT id FROM post_analytics WHERE dispatch_id = ? ORDER BY fetched_at DESC LIMIT 1')
+      .get(dispatchId) as { id: string } | undefined;
+
+    let created = false;
+    if (!existing) {
+      const id = `A-${Date.now()}`;
+      this.db
+        .prepare(
+          `INSERT INTO post_analytics (id, dispatch_id, views, likes, comments, shares, collected, fetched_at)
+           VALUES (?, ?, 0, 0, 0, 0, 0, CURRENT_TIMESTAMP)`
+        )
+        .run(id, dispatchId);
+      created = true;
+    } else {
+      this.db
+        .prepare('UPDATE post_analytics SET fetched_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(existing.id);
+    }
+
+    const item = this.getAnalyticsByDispatch(dispatchId);
+    if (!item) return null;
+    return { ...item, mode: 'placeholder', created };
+  }
+
+  private mapAnalyticsRow(row: any): {
+    dispatchId: string;
+    masterId: string;
+    channel: string;
+    title: string;
+    publishedAt: string | null;
+    metrics: { views: number; likes: number; comments: number; shares: number; collected: number } | null;
+    fetchedAt: string | null;
+    analyticsId: string | null;
+  } {
+    const hasAnalytics = row.analytics_id != null;
+    return {
+      dispatchId: row.dispatch_id,
+      masterId: row.master_id,
+      channel: row.channel,
+      title: row.title || '',
+      publishedAt: row.published_at ?? null,
+      metrics: hasAnalytics
+        ? {
+            views: Number(row.views) || 0,
+            likes: Number(row.likes) || 0,
+            comments: Number(row.comments) || 0,
+            shares: Number(row.shares) || 0,
+            collected: Number(row.collected) || 0
+          }
+        : null,
+      fetchedAt: hasAnalytics ? row.fetched_at ?? null : null,
+      analyticsId: hasAnalytics ? row.analytics_id : null
+    };
   }
 
   close(): void {

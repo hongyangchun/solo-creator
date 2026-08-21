@@ -33,7 +33,7 @@ function jsonHeaders(): http.OutgoingHttpHeaders {
   return {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type'
   };
 }
@@ -387,6 +387,48 @@ export function startEngineServer(port: number = PORT): http.Server {
           errorLog: result.success ? undefined : result.errorMessage
         });
         return ok(result, res);
+      }
+
+      // ===== ⑤ 数据复盘（Analytics Retro MVP；禁止触发 publish / 读密钥明文）=====
+      if (p === '/api/v1/analytics' && m === 'GET') {
+        return ok(storage.listAnalyticsJoined(), res);
+      }
+
+      const analyticsRefresh = p.match(/^\/api\/v1\/analytics\/([^/]+)\/refresh$/);
+      if (analyticsRefresh && m === 'POST') {
+        const item = storage.refreshAnalyticsPlaceholder(analyticsRefresh[1]);
+        if (!item) return fail(422, 'dispatch 不存在', res);
+        return ok(item, res);
+      }
+
+      const analyticsOne = p.match(/^\/api\/v1\/analytics\/([^/]+)$/);
+      if (analyticsOne) {
+        const dispatchId = analyticsOne[1];
+        if (m === 'GET') {
+          const item = storage.getAnalyticsByDispatch(dispatchId);
+          if (!item) return fail(422, 'dispatch 不存在', res);
+          return ok(item, res);
+        }
+        if (m === 'PUT') {
+          const body = await readJsonBody(req);
+          const parseMetric = (v: unknown): number | null => {
+            if (v === undefined || v === null || v === '') return 0;
+            const n = Number(v);
+            if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) return null;
+            return n;
+          };
+          const views = parseMetric(body.views);
+          const likes = parseMetric(body.likes);
+          const comments = parseMetric(body.comments);
+          const shares = parseMetric(body.shares);
+          const collected = parseMetric(body.collected);
+          if (views === null || likes === null || comments === null || shares === null || collected === null) {
+            return fail(422, '指标须为非负整数', res);
+          }
+          const item = storage.upsertPostAnalytics(dispatchId, { views, likes, comments, shares, collected });
+          if (!item) return fail(422, 'dispatch 不存在', res);
+          return ok(item, res);
+        }
       }
 
       // ===== SSE 长任务进度 =====

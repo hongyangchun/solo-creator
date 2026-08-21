@@ -255,4 +255,134 @@ describe('engineServer HTTP 契约（Spec §2）', () => {
       expect(String(retry.json.data.errorMessage ?? '').length).toBeGreaterThan(0);
     }, 15000);
   });
+
+  // ===== Analytics Retro MVP 契约 =====
+  describe('Analytics Retro MVP（/api/v1/analytics）', () => {
+    let analyticsMasterId = '';
+    let analyticsDispatchId = '';
+
+    it('准备：母稿 + publish 产生 dispatch（可无 analytics）', async () => {
+      process.env.CHROME_CDP_ENDPOINT = 'http://127.0.0.1:1';
+      process.env.EDGE_PATH = '/nonexistent/solo-creator-qa-test-edge';
+      const created = await request('POST', '/api/v1/master', {
+        idea: '复盘契约母稿',
+        topic: '自媒体创作'
+      });
+      expect(created.json.code).toBe(0);
+      analyticsMasterId = created.json.data.id;
+      const pub = await request('POST', `/api/v1/master/${analyticsMasterId}/publish`, {
+        channels: ['wechat'],
+        draftOnly: true
+      });
+      expect(pub.json.code).toBe(0);
+      const dispatches = await request('GET', `/api/v1/master/${analyticsMasterId}/dispatch`);
+      expect(dispatches.json.data.length).toBeGreaterThanOrEqual(1);
+      analyticsDispatchId = dispatches.json.data[0].id;
+    }, 15000);
+
+    it('GET /api/v1/analytics 列表含未录入 dispatch（metrics null）', async () => {
+      const { status, json } = await request('GET', '/api/v1/analytics');
+      expect(status).toBe(200);
+      expect(json.code).toBe(0);
+      expect(json.data.total).toBeGreaterThanOrEqual(1);
+      const row = json.data.items.find((i: any) => i.dispatchId === analyticsDispatchId);
+      expect(row).toBeTruthy();
+      expect(row.metrics).toBeNull();
+      expect(row.fetchedAt).toBeNull();
+      expect(row.analyticsId).toBeNull();
+      expect(row.channel).toBeTruthy();
+      expect(typeof row.title).toBe('string');
+    });
+
+    it('GET /api/v1/analytics/:id 详情；非法 id → 422', async () => {
+      const okRes = await request('GET', `/api/v1/analytics/${analyticsDispatchId}`);
+      expect(okRes.json.code).toBe(0);
+      expect(okRes.json.data.dispatchId).toBe(analyticsDispatchId);
+      expect(okRes.json.data.metrics).toBeNull();
+
+      const bad = await request('GET', '/api/v1/analytics/D-not-exist');
+      expect(bad.json.code).toBe(422);
+      expect(bad.json.data).toBeNull();
+    });
+
+    it('PUT upsert 指标并再次 GET 一致；负值 → 422', async () => {
+      const put = await request('PUT', `/api/v1/analytics/${analyticsDispatchId}`, {
+        views: 1200,
+        likes: 88,
+        comments: 12,
+        shares: 5,
+        collected: 30
+      });
+      expect(put.json.code).toBe(0);
+      expect(put.json.data.metrics).toEqual({
+        views: 1200,
+        likes: 88,
+        comments: 12,
+        shares: 5,
+        collected: 30
+      });
+      expect(put.json.data.fetchedAt).toBeTruthy();
+      expect(put.json.data.analyticsId).toMatch(/^A-/);
+
+      const again = await request('GET', `/api/v1/analytics/${analyticsDispatchId}`);
+      expect(again.json.data.metrics.views).toBe(1200);
+
+      const neg = await request('PUT', `/api/v1/analytics/${analyticsDispatchId}`, {
+        views: -1,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        collected: 0
+      });
+      expect(neg.json.code).toBe(422);
+
+      const missingDispatch = await request('PUT', '/api/v1/analytics/D-missing', {
+        views: 1,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        collected: 0
+      });
+      expect(missingDispatch.json.code).toBe(422);
+    });
+
+    it('POST refresh：已有行仅刷 fetched_at，mode=placeholder，created=false', async () => {
+      const before = await request('GET', `/api/v1/analytics/${analyticsDispatchId}`);
+      const prevViews = before.json.data.metrics.views;
+      const refresh = await request('POST', `/api/v1/analytics/${analyticsDispatchId}/refresh`);
+      expect(refresh.json.code).toBe(0);
+      expect(refresh.json.data.mode).toBe('placeholder');
+      expect(refresh.json.data.created).toBe(false);
+      expect(refresh.json.data.metrics.views).toBe(prevViews);
+      expect(refresh.json.data.fetchedAt).toBeTruthy();
+
+      const bad = await request('POST', '/api/v1/analytics/D-missing/refresh');
+      expect(bad.json.code).toBe(422);
+    });
+
+    it('POST refresh：无 analytics 行时插全 0，created=true', async () => {
+      const pub = await request('POST', `/api/v1/master/${analyticsMasterId}/publish`, {
+        channels: ['xiaohongshu'],
+        draftOnly: true
+      });
+      expect(pub.json.code).toBe(0);
+      const dispatches = await request('GET', `/api/v1/master/${analyticsMasterId}/dispatch`);
+      const fresh = dispatches.json.data.find((d: any) => d.channel === 'xiaohongshu');
+      expect(fresh).toBeTruthy();
+      const detailBefore = await request('GET', `/api/v1/analytics/${fresh.id}`);
+      expect(detailBefore.json.data.metrics).toBeNull();
+
+      const refresh = await request('POST', `/api/v1/analytics/${fresh.id}/refresh`);
+      expect(refresh.json.code).toBe(0);
+      expect(refresh.json.data.mode).toBe('placeholder');
+      expect(refresh.json.data.created).toBe(true);
+      expect(refresh.json.data.metrics).toEqual({
+        views: 0,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        collected: 0
+      });
+    }, 15000);
+  });
 });

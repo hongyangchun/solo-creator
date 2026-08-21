@@ -40,7 +40,7 @@ PRD v3.0 把「桌面 Tauri 壳」列为四平等宿主适配器之一，但从�
 | **D3** | 自动更新/打包策略 | **sidecar + Node + Chromium 随主包整体分发** | 包 80~150MB，更新器整体替换；简单优先 |
 | **S1** | 默认主题 | **浅色纸感优先 + 完整深色模式**（可切换） | `data-theme="light"` 默认 |
 | **S2** | 品牌主色 | **墨青 Teal `#0D9488`**（深色 `#2DD4BF`） | 避开 AI 蓝/紫粉（P0 红线） |
-| **S3** | 创作台布局 & 落地页 | **三栏工作台，应用启动默认进母稿**；导航保留「数据复盘」占位入口（v2 实装） | v1 仅骨架占位 |
+| **S3** | 创作台布局 & 落地页 | **三栏工作台，应用启动默认进母稿**；导航「数据复盘」为 **MVP 可用模块**（列表 + 详情，读写本地 `post_analytics` 基础指标；手动写入/刷新占位；**不含**平台自动回抓与 Persona/归因闭环） | 落地页仍为母稿；Retro 从占位升级为 MVP |
 
 ---
 
@@ -98,6 +98,16 @@ Tauri webview 是系统浏览器内核，**物理上无法加载 Node 原生模�
 - `GET    /api/v1/dashboard`            → 聚合看板（母稿 × 渠道 × 状态）
 - `POST   /api/v1/dispatch/:id/retry`   → 失败重试
 
+**⑤ 数据复盘（Analytics Retro MVP）**
+- `GET    /api/v1/analytics`                 → 列表：dispatch 联查 master + 最新 post_analytics
+                                               项含 channel, title, published_at, views, likes,
+                                               comments, shares, collected, fetched_at, dispatchId
+- `GET    /api/v1/analytics/:dispatchId`     → 单条详情（同上字段；无指标时 metrics 为 null）
+- `PUT    /api/v1/analytics/:dispatchId`     body `{views,likes,comments,shares,collected}`
+                                               → upsert post_analytics，更新 fetched_at
+- `POST   /api/v1/analytics/:dispatchId/refresh` → MVP 占位刷新（不打外部平台；策略 A：无行插全 0，有行仅刷新 fetched_at，响应 mode:'placeholder'）
+*禁止* 本模块端点触发 publish / 返回密钥明文
+
 **长任务进度**
 - `GET    /api/v1/jobs/:id/stream`      → SSE 进度流（渲染百分比、发布逐渠道结果），前端 `EventSource` 订阅
 
@@ -130,7 +140,8 @@ Tauri webview 是系统浏览器内核，**物理上无法加载 Node 原生模�
 ① 密钥/配置中心  [key-round]   ── 凭据保险箱 / 模型与质检 / 渠道与驱动 / 偏好
 ② 母稿创作台      [pen-line]    ── 灵感收件箱 / 母稿编辑器(默认启动页) / 母稿库
 ③ 多端实时预览    [monitor]     ── 转译 / 预览台
-④ 发布状态看板    [layout-dashboard] ── 分发状态 / 一键发布 / 通知中心 / 数据复盘(v2 占位)
+④ 发布状态看板    [layout-dashboard] ── 分发状态 / 一键发布 / 通知中心
+⑤ 数据复盘 `/retro` — 列表 + 详情，展示/手动维护 post_analytics 基础指标（MVP）
 + 顶部全局 ⌘K 命令面板 + 右侧上下文面板（仅 ②③ 展开）
 ```
 导航项右上角 status pill：密钥缺失(琥珀) / 发布失败(红) / 飞书未连(灰)。
@@ -192,10 +203,10 @@ solo-creator/
 │       │   │   ├── Studio.tsx              # ② (默认路由)
 │       │   │   ├── Preview.tsx             # ③
 │       │   │   ├── Dashboard.tsx           # ④
-│       │   │   └── Retro.tsx              # v2 占位
+│       │   │   └── Retro.tsx              # 数据复盘 MVP：列表 + 详情
 │       │   ├── lib/
-│       │   │   ├── engineClient.ts        # fetch 封装，base URL = 127.0.0.1:PORT
-│       │   │   ├── queries.ts             # TanStack Query hooks
+│       │   │   ├── engineClient.ts        # fetch 封装，base URL = 127.0.0.1:PORT（含 analytics API）
+│       │   │   ├── queries.ts             # TanStack Query hooks（含 analytics hooks）
 │       │   │   └── types.ts               # 与引擎契约对齐的类型
 │       │   ├── store/uiStore.ts           # Zustand（渠道/主题/草稿/路由/侧栏）
 │       │   └── components/                # Radix + Tailwind，lucide-react 图标
@@ -227,6 +238,10 @@ solo-creator/
   → POST /master/:id/render {theme} → SSE → CardRenderer 写 PNG → 返回路径
   → POST /master/:id/publish {channels, draftOnly:true} → SSE 逐渠道
   → invalidateQueries(['dashboard']) → 看板刷新状态徽标
+
+复盘：GET/PUT /api/v1/analytics* → SQLite post_analytics
+  → TanStack invalidate ['analytics'] → /retro 列表/详情刷新
+  （不进入 publish 链路）
 ```
 
 ---
@@ -255,6 +270,14 @@ solo-creator/
 - WHEN 某渠道分发失败，`THEN` 该行红色 + 「重试」按钮 + 日志折叠；重试时 `DispatchLock` 跳过已成功渠道。
 - WHEN 微信 CDP 登录失效，`THEN` 弹二维码模态 + 倒计时≤120s + 超时优雅报错。
 
+**⑤ 数据复盘**
+- WHEN 存在 channel_dispatches 且已 upsert 指标，THEN GET /api/v1/analytics 返回对应行且 GUI 列表可见。
+- WHEN 用户打开详情，THEN 可见渠道、标题、发布时间与 views/likes/comments/shares/collected/fetched_at。
+- WHEN 用户 PUT 手动写入指标，THEN 持久化到 post_analytics，刷新后仍在。
+- WHEN 用户点「刷新」（MVP），THEN 不调用外部平台，fetched_at 更新或按占位策略响应，UI 不报崩溃。
+- IF 尚无任何 analytics 行，THEN 列表仍展示 dispatch 并标「未录入」，或 Empty 引导手动录入/种子（PRD D3）。
+- WHEN 走复盘写入，THEN 不触发 publish，draftOnly 安全边界保持。
+
 **跨模块**
 - WHEN 应用退出，`THEN` sidecar 进程随之终止，无孤儿进程。
 - WHEN `GET /api/v1/health` 失败，`THEN` 前端显示「引擎启动失败」并附原生模块/缺失 lib 诊断。
@@ -265,7 +288,8 @@ solo-creator/
 
 - 不重写引擎任何业务逻辑；不把引擎移植到 Rust/WASM。
 - 不做账号体系、云端同步、团队协作（本地优先）。
-- 不做 v2 复盘/分析页数据回采（`post_analytics` 表已建未写，v1 仅占位入口）。
+- ~~不做 v2 复盘占位~~ → **已纳入 MVP**：GUI 列表/详情 + 本地 post_analytics 手动写入/刷新占位。
+- **仍不做（延期）**：各平台真实数据自动回采、定时调度、Persona 自进化、AttributionEngine / LLM 归因闭环。
 - 不做 macOS/Windows/Linux 三端全量签名证书配置（仅在风险给路径）。
 - 不实现 D2 选项 b（保险箱解锁口令/系统钥匙串）—— 维持 D2 机器指纹派生。
 - 不实现 D3 选项 b（首次启动按需下载 sidecar）—— 维持随主包整体分发。
