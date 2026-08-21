@@ -48,7 +48,12 @@ export const engine = {
   upsertAnalytics: (dispatchId: string, body: UpsertAnalyticsBody) =>
     request<AnalyticsListItem>('PUT', `/analytics/${dispatchId}`, body),
   refreshAnalytics: (dispatchId: string) =>
-    request<RefreshAnalyticsResult>('POST', `/analytics/${dispatchId}/refresh`)
+    request<RefreshAnalyticsResult>('POST', `/analytics/${dispatchId}/refresh`),
+  // ⑥ 应用配置（I3）
+  getAppConfig: () => request<AppConfigResponse>('GET', '/config'),
+  putAppConfig: (patch: Partial<AppConfigPatch>) => request<AppConfigResponse>('PUT', '/config', patch),
+  probeDrivers: (cdpEndpoint?: string) =>
+    request<DriverProbeResponse>('POST', '/config/drivers/probe', cdpEndpoint ? { cdpEndpoint } : {})
 };
 
 export function subscribeJob(jobId: string, onEvent: (job: JobProgress) => void): () => void {
@@ -162,4 +167,29 @@ export interface RefreshAnalyticsResult extends AnalyticsListItem {
 export interface AnalyticsListResponse {
   total: number;
   items: AnalyticsListItem[];
+}
+
+// ---- I3 应用配置 ----
+export interface AppConfigResponse {
+  cdpEndpoint: string;
+  llmEnabled?: boolean;
+  criticEnabled: boolean;
+}
+
+export interface AppConfigPatch {
+  cdpEndpoint?: string;
+  llmEnabled?: boolean;
+  criticEnabled?: boolean;
+}
+
+export interface DriverProbeResult {
+  channel: string;
+  driverId: string;
+  available: boolean;
+  error: string | null;
+}
+
+export interface DriverProbeResponse {
+  cdpEndpoint: string;
+  results: DriverProbeResult[];
 }

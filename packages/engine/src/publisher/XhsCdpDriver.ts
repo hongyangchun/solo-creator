@@ -3,6 +3,7 @@ import { PlatformDriver } from './PlatformDriver';
 import { LoginStateGuard } from './LoginStateGuard';
 import { chromium, BrowserContext } from 'playwright';
 import * as fs from 'fs';
+import { resolveCdpEndpoint } from '../config/AppConfig';
 
 /**
  * 小红书 CDP 驱动：
@@ -14,13 +15,18 @@ export class XhsCdpDriver implements PlatformDriver {
   readonly driverType = 'cdp' as const;
   readonly priority = 2;
 
-  constructor(private cdpEndpoint: string = process.env.CHROME_CDP_ENDPOINT || 'http://127.0.0.1:9333') {}
+  /** 显式端点覆盖；缺省时每次调用动态解析（app_config > env > 默认 9333） */
+  constructor(private cdpEndpoint?: string | null) {}
+
+  private endpoint(): string {
+    return resolveCdpEndpoint(this.cdpEndpoint);
+  }
 
   async isAvailable(): Promise<boolean> {
     // 可用性判定 = 能连接 + 能真实开页。
     // 端口被 Electron 等非调试浏览器占用时，connectOverCDP 能成功但 newPage 会抛错，必须排除。
     try {
-      const browser = await chromium.connectOverCDP(this.cdpEndpoint, { timeout: 1500 });
+      const browser = await chromium.connectOverCDP(this.endpoint(), { timeout: 1500 });
       try {
         const ctx = browser.contexts()[0] || (await browser.newContext());
         const page = await ctx.newPage();
@@ -40,7 +46,7 @@ export class XhsCdpDriver implements PlatformDriver {
 
   async publish(payload: UnifiedPayload): Promise<PublishResult> {
     const cardFlow = payload as CardFlowPayload;
-    const browser = await chromium.connectOverCDP(this.cdpEndpoint);
+    const browser = await chromium.connectOverCDP(this.endpoint());
     const context: BrowserContext = browser.contexts()[0] || (await browser.newContext());
     const page = await context.newPage();
 

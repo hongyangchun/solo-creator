@@ -2,6 +2,7 @@ import { chromium, Browser, BrowserContext } from 'playwright';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { resolveCdpEndpoint } from '../config/AppConfig';
 
 export interface AcquiredBrowser {
   browser: Browser;
@@ -13,15 +14,21 @@ const DEFAULT_EDGE =
   '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
 const PROFILE_DIR = path.join(process.env.HOME || os.homedir(), '.solo-creator', 'browser-profile');
 
+export interface AcquireOptions {
+  /** 显式 CDP 端点（如 app_config 存储值）；缺省时动态解析 env → 默认 */
+  cdpEndpoint?: string | null;
+}
+
 /**
  * 获取一个浏览器上下文：
- * 1. 若配置了 CHROME_CDP_ENDPOINT 且可达 → 复用常驻调试浏览器 (connectOverCDP)
+ * 1. 若配置了 CDP 端点且可达 → 复用常驻调试浏览器 (connectOverCDP)
  * 2. 否则 → 用 Edge 二进制 + 已保存登录态的用户目录，按需拉起独立实例
  *
  * 登录 cookie 持久化在 PROFILE_DIR，首次扫码后无需重复登录。
+ * 端点解析在每次调用时进行（app_config 更新后下一次 publish/probe 即生效）。
  */
-export async function acquireBrowserContext(): Promise<AcquiredBrowser> {
-  const cdpEndpoint = process.env.CHROME_CDP_ENDPOINT || 'http://127.0.0.1:9333';
+export async function acquireBrowserContext(opts: AcquireOptions = {}): Promise<AcquiredBrowser> {
+  const cdpEndpoint = resolveCdpEndpoint(opts.cdpEndpoint);
 
   // 模式 1：复用常驻 CDP 浏览器
   // 注意：仅验证"能否 connectOverCDP"是不够的——9222 等调试端口可能被
@@ -57,6 +64,31 @@ export async function acquireBrowserContext(): Promise<AcquiredBrowser> {
   });
 
   return { browser: context.browser()!, context, mode: 'launch' };
+}
+
+/**
+ * CDP 端点双检探测：connectOverCDP + newPage。
+ * 用于设置页「探测连接」，短超时（默认 3s），绝不拉起浏览器。
+ */
+export async function probeCdpEndpoint(
+  cdpEndpoint: string,
+  timeoutMs = 3000
+): Promise<{ available: boolean; error?: string }> {
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.connectOverCDP(cdpEndpoint, { timeout: timeoutMs });
+    const ctx = browser.contexts()[0] || (await browser.newContext());
+    const page = await ctx.newPage();
+    await page.close();
+    return { available: true };
+  } catch (err) {
+    return {
+      available: false,
+      error: err instanceof Error ? err.message : String(err)
+    };
+  } finally {
+    if (browser) await browser.close().catch(() => undefined);
+  }
 }
 
 /**

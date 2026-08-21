@@ -5,6 +5,8 @@ import AppShell from './components/AppShell';
 import SettingsLayout from './routes/SettingsLayout';
 import SettingsSecrets from './routes/SettingsSecrets';
 import SettingsPreferences from './routes/SettingsPreferences';
+import SettingsChannels from './routes/SettingsChannels';
+import SettingsModel from './routes/SettingsModel';
 import Studio from './routes/Studio';
 import Preview from './routes/Preview';
 import Dashboard from './routes/Dashboard';
@@ -37,6 +39,8 @@ export default function App() {
               <Route index element={<Navigate to="secrets" replace />} />
               <Route path="secrets" element={<SettingsSecrets />} />
               <Route path="preferences" element={<SettingsPreferences />} />
+              <Route path="drivers" element={<SettingsChannels />} />
+              <Route path="models" element={<SettingsModel />} />
             </Route>
             <Route path="/studio" element={<Studio />} />
             <Route path="/preview/:masterId" element={<Preview />} />

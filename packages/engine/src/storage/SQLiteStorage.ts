@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
 import { MasterPost, ChannelType, UnifiedPayload, RawIdeaPayload } from '../types';
+import { SqliteAppConfigStore } from '../config/AppConfig';
 
 export class SQLiteStorage {
   private db: Database.Database;
@@ -66,6 +67,12 @@ export class SQLiteStorage {
       );
 
       CREATE TABLE IF NOT EXISTS persona_memory (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS app_config (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -380,6 +387,12 @@ export class SQLiteStorage {
       fetchedAt: hasAnalytics ? row.fetched_at ?? null : null,
       analyticsId: hasAnalytics ? row.analytics_id : null
     };
+  }
+
+  // ===== I3 应用配置（app_config key-value 行；渠道与驱动 / 模型与质检）=====
+
+  getConfigStore(): SqliteAppConfigStore {
+    return new SqliteAppConfigStore(this.db);
   }
 
   close(): void {

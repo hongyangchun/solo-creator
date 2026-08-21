@@ -5,6 +5,8 @@ import { HumanizerZhCritic } from '../critic/HumanizerZhCritic';
 import { TranspilerMatrix, TranspileTarget } from '../transpiler/TranspilerMatrix';
 import { CardRenderer } from '../renderer/CardRenderer';
 import { ChannelType, PublishResult, UnifiedPayload } from '../types';
+import { isValidCdpEndpoint, DEFAULT_CDP_ENDPOINT } from '../config/AppConfig';
+import { probeCdpEndpoint } from '../publisher/browserLauncher';
 
 const PORT = Number(process.env.ENGINE_PORT || 39281);
 const VERSION = ENGINE_VERSION;
@@ -187,11 +189,23 @@ export function startEngineServer(port: number = PORT): http.Server {
       if (p === '/api/v1/master' && m === 'POST') {
         const { idea, topic } = await readJsonBody(req);
         if (!idea) return fail(422, 'idea 必填', res);
-        const post = await masterService.createMasterPost(String(idea), topic || '自媒体创作');
+        const cfg = storage.getConfigStore().getAppConfig();
+        const post = await masterService.createMasterPost(String(idea), topic || '自媒体创作', {
+          llmEnabled: cfg.llmEnabled,
+          criticEnabled: cfg.criticEnabled
+        });
         storage.saveMasterPost(post);
-        const critic = HumanizerZhCritic.evaluate(post.masterMarkdown);
+        // critic 关闭时不做响应侧质检评分（生成链路已跳过）
+        const critic = cfg.criticEnabled === false ? null : HumanizerZhCritic.evaluate(post.masterMarkdown);
         const llmReady = await llm.isAvailable();
-        return ok({ ...post, critic: { score: critic.score, passed: critic.passed }, generatedBy: llmReady ? 'llm' : 'offline' }, res);
+        return ok(
+          {
+            ...post,
+            ...(critic ? { critic: { score: critic.score, passed: critic.passed } } : {}),
+            generatedBy: llmReady ? 'llm' : 'offline'
+          },
+          res
+        );
       }
       if (p === '/api/v1/master' && m === 'GET') {
         const page = Number(url.searchParams.get('page') || 1);
@@ -409,6 +423,69 @@ export function startEngineServer(port: number = PORT): http.Server {
           if (!item) return fail(422, 'dispatch 不存在', res);
           return ok(item, res);
         }
+      }
+
+      // ===== ⑥ 应用配置（I3：渠道与驱动 / 模型与质检）=====
+      const configStore = storage.getConfigStore();
+
+      if (p === '/api/v1/config' && m === 'GET') {
+        const stored = configStore.getAppConfig();
+        return ok(
+          {
+            cdpEndpoint: stored.cdpEndpoint ?? DEFAULT_CDP_ENDPOINT,
+            llmEnabled: stored.llmEnabled, // undefined = 未显式覆盖（按有无 Key 自动）
+            criticEnabled: stored.criticEnabled ?? true
+          },
+          res
+        );
+      }
+
+      if (p === '/api/v1/config' && m === 'PUT') {
+        const body = await readJsonBody(req);
+        if (body.cdpEndpoint !== undefined && !isValidCdpEndpoint(body.cdpEndpoint)) {
+          return fail(422, 'cdpEndpoint 必须以 http:// 或 https:// 开头', res, 400);
+        }
+        const patch: Record<string, string | boolean> = {};
+        if (typeof body.cdpEndpoint === 'string') patch.cdpEndpoint = body.cdpEndpoint.trim();
+        if (typeof body.llmEnabled === 'boolean') patch.llmEnabled = body.llmEnabled;
+        if (typeof body.criticEnabled === 'boolean') patch.criticEnabled = body.criticEnabled;
+        configStore.setAppConfig(patch);
+        const stored = configStore.getAppConfig();
+        return ok(
+          {
+            cdpEndpoint: stored.cdpEndpoint ?? DEFAULT_CDP_ENDPOINT,
+            llmEnabled: stored.llmEnabled,
+            criticEnabled: stored.criticEnabled ?? true
+          },
+          res
+        );
+      }
+
+      if (p === '/api/v1/config/drivers/probe' && m === 'POST') {
+        const body = m === 'POST' ? await readJsonBody(req) : {};
+        const stored = configStore.getAppConfig();
+        const endpoint = typeof body.cdpEndpoint === 'string' && body.cdpEndpoint.trim()
+          ? body.cdpEndpoint.trim()
+          : stored.cdpEndpoint ?? process.env.CHROME_CDP_ENDPOINT ?? DEFAULT_CDP_ENDPOINT;
+        // CDP 驱动共用同一端点，双检一次后映射到各 CDP 渠道
+        const probe = await probeCdpEndpoint(endpoint, 3000);
+        const channels = [
+          { channel: 'wechat', driverId: 'wechat-cdp' },
+          { channel: 'xiaohongshu', driverId: 'xhs-cdp' },
+          { channel: 'x', driverId: 'x-cdp' }
+        ];
+        return ok(
+          {
+            cdpEndpoint: endpoint,
+            results: channels.map((c) => ({
+              channel: c.channel,
+              driverId: c.driverId,
+              available: probe.available,
+              error: probe.error ?? null
+            }))
+          },
+          res
+        );
       }
 
       // ===== SSE 长任务进度 =====

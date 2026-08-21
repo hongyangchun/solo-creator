@@ -256,6 +256,75 @@ describe('engineServer HTTP 契约（Spec §2）', () => {
     }, 15000);
   });
 
+  // ===== I3 应用配置契约（/api/v1/config）=====
+  describe('应用配置（I3：渠道与驱动 / 模型与质检）', () => {
+    it('GET /api/v1/config 返回默认值（未写入 = 现状）', async () => {
+      const { status, json } = await request('GET', '/api/v1/config');
+      expect(status).toBe(200);
+      expect(json.code).toBe(0);
+      expect(json.data.cdpEndpoint).toBe('http://127.0.0.1:9333');
+      expect(json.data.llmEnabled).toBeUndefined(); // 未显式覆盖
+      expect(json.data.criticEnabled).toBe(true);
+    });
+
+    it('PUT /api/v1/config：合法值保存并回读一致', async () => {
+      const put = await request('PUT', '/api/v1/config', {
+        cdpEndpoint: 'http://127.0.0.1:9334',
+        llmEnabled: false,
+        criticEnabled: false
+      });
+      expect(put.json.code).toBe(0);
+      expect(put.json.data.cdpEndpoint).toBe('http://127.0.0.1:9334');
+      expect(put.json.data.llmEnabled).toBe(false);
+      expect(put.json.data.criticEnabled).toBe(false);
+
+      const get = await request('GET', '/api/v1/config');
+      expect(get.json.data.cdpEndpoint).toBe('http://127.0.0.1:9334');
+      expect(get.json.data.llmEnabled).toBe(false);
+      expect(get.json.data.criticEnabled).toBe(false);
+    });
+
+    it('PUT /api/v1/config：非法 cdpEndpoint → 400', async () => {
+      const bad = await request('PUT', '/api/v1/config', { cdpEndpoint: '127.0.0.1:9333' });
+      expect(bad.status).toBe(400);
+      expect(bad.json.code).toBe(422);
+      expect(bad.json.data).toBeNull();
+    });
+
+    it('criticEnabled=false 后生成母稿跳过质检（生成链路消费配置）', async () => {
+      // 当前配置已 criticEnabled=false（上一用例写入）
+      const created = await request('POST', '/api/v1/master', { idea: '跳过质检验证' });
+      expect(created.json.code).toBe(0);
+      // 默认路径 critic.score > 0；关闭后服务端不返回 critic 评分（跳过 evaluate）
+      expect(created.json.data.critic).toBeUndefined();
+
+      // 还原配置，避免污染后续用例
+      const restore = await request('PUT', '/api/v1/config', { criticEnabled: true });
+      expect(restore.json.code).toBe(0);
+    });
+
+    it('POST /api/v1/config/drivers/probe：CDP 不可达时逐渠道 available=false + error', async () => {
+      // 用必拒端口探测（不保存，body 传入）
+      const probe = await request('POST', '/api/v1/config/drivers/probe', {
+        cdpEndpoint: 'http://127.0.0.1:1'
+      });
+      expect(probe.status).toBe(200);
+      expect(probe.json.code).toBe(0);
+      expect(probe.json.data.cdpEndpoint).toBe('http://127.0.0.1:1');
+      expect(probe.json.data.results).toHaveLength(3);
+      for (const r of probe.json.data.results) {
+        expect(['wechat', 'xiaohongshu', 'x']).toContain(r.channel);
+        expect(r.available).toBe(false);
+        expect(String(r.error ?? '').length).toBeGreaterThan(0);
+      }
+    }, 15000);
+
+    it('清理：恢复默认配置', async () => {
+      const put = await request('PUT', '/api/v1/config', { cdpEndpoint: 'http://127.0.0.1:9333' });
+      expect(put.json.code).toBe(0);
+    });
+  });
+
   // ===== Analytics Retro MVP 契约 =====
   describe('Analytics Retro MVP（/api/v1/analytics）', () => {
     let analyticsMasterId = '';

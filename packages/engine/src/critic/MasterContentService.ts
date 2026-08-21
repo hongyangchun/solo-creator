@@ -3,6 +3,14 @@ import { HookGeneratorService } from '../critic/HookGeneratorService';
 import { HumanizerZhCritic } from '../critic/HumanizerZhCritic';
 import { MasterPost } from '../types';
 
+/** 生成选项（I3 app_config 接入；未写入配置 = 现状默认行为） */
+export interface MasterGenerateOptions {
+  /** false = 强制离线规则模式（优先于 LLM Key 是否存在） */
+  llmEnabled?: boolean;
+  /** false = 跳过 HumanizerZhCritic 去 AI 味质检 */
+  criticEnabled?: boolean;
+}
+
 /**
  * 母稿生成服务：
  * 1. 优先调用 LLM 展开完整长文母稿
@@ -12,13 +20,15 @@ import { MasterPost } from '../types';
 export class MasterContentService {
   constructor(private llm: LlmAdapter) {}
 
-  async createMasterPost(rawIdea: string, topic: string = '自媒体创作'): Promise<MasterPost> {
+  async createMasterPost(rawIdea: string, topic: string = '自媒体创作', opts: MasterGenerateOptions = {}): Promise<MasterPost> {
+    const llmAllowed = opts.llmEnabled !== false;
+    const criticAllowed = opts.criticEnabled !== false;
     let title = rawIdea.slice(0, 30);
     let markdown = rawIdea;
     let takeaways: string[] = [rawIdea];
     let source: 'llm' | 'rule' = 'rule';
 
-    const llmReady = await this.llm.isAvailable();
+    const llmReady = llmAllowed ? await this.llm.isAvailable() : false;
     if (llmReady) {
       try {
         const result = await this.generateWithLlm(rawIdea, topic);
@@ -31,9 +41,13 @@ export class MasterContentService {
       }
     }
 
-    // 强制过质检：替换八股词
-    const critic = HumanizerZhCritic.evaluate(markdown);
-    const purified = critic.passed ? critic.purifiedContent : HumanizerZhCritic.evaluate(critic.purifiedContent).purifiedContent;
+    // 质检（criticEnabled=false 时跳过，内容原样输出）
+    const purified = criticAllowed
+      ? (() => {
+          const critic = HumanizerZhCritic.evaluate(markdown);
+          return critic.passed ? critic.purifiedContent : HumanizerZhCritic.evaluate(critic.purifiedContent).purifiedContent;
+        })()
+      : markdown;
 
     const hooks = HookGeneratorService.generateHooks(topic, rawIdea);
 

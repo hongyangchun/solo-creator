@@ -6,7 +6,9 @@ import {
   DispatchRecord,
   AnalyticsListItem,
   AnalyticsListResponse,
-  UpsertAnalyticsBody
+  UpsertAnalyticsBody,
+  AppConfigResponse,
+  AppConfigPatch
 } from './engineClient';
 
 const KEYS = {
@@ -16,7 +18,8 @@ const KEYS = {
   dashboard: ['dashboard'] as const,
   dispatches: (id: string) => ['dispatches', id] as const,
   analytics: ['analytics'] as const,
-  analyticsDetail: (id: string) => ['analytics', id] as const
+  analyticsDetail: (id: string) => ['analytics', id] as const,
+  appConfig: ['appConfig'] as const
 };
 
 // ---- ① 密钥 ----
@@ -152,5 +155,24 @@ export function useRefreshAnalytics() {
       qc.invalidateQueries({ queryKey: KEYS.analytics });
       qc.invalidateQueries({ queryKey: KEYS.analyticsDetail(dispatchId) });
     }
+  });
+}
+
+// ---- ⑥ 应用配置（I3：渠道与驱动 / 模型与质检）----
+export function useAppConfig() {
+  return useQuery<AppConfigResponse>({ queryKey: KEYS.appConfig, queryFn: engine.getAppConfig });
+}
+
+export function usePutAppConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: AppConfigPatch) => engine.putAppConfig(patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.appConfig })
+  });
+}
+
+export function useProbeDrivers() {
+  return useMutation({
+    mutationFn: (cdpEndpoint?: string) => engine.probeDrivers(cdpEndpoint)
   });
 }
