@@ -1,26 +1,39 @@
 import { Command } from 'commander';
-import { SQLiteStorage } from '../storage/SQLiteStorage';
 import { HumanizerZhCritic } from '../critic/HumanizerZhCritic';
 import { HookGeneratorService } from '../critic/HookGeneratorService';
-import { MasterContentService } from '../critic/MasterContentService';
-import { DeepSeekAdapter } from '../llm/DeepSeekAdapter';
 import { TranspilerMatrix, TranspileTarget } from '../transpiler/TranspilerMatrix';
 import { CardRenderer } from '../renderer/CardRenderer';
-import { PublisherRegistry } from '../publisher';
-import { WeChatApiDriver } from '../publisher/WeChatApiDriver';
-import { WeChatCdpDriver } from '../publisher/WeChatCdpDriver';
-import { XCdpDriver } from '../publisher/XCdpDriver';
-import { XhsCdpDriver } from '../publisher/XhsCdpDriver';
 import { FeishuCardNotifier, ConsoleNotifier } from '../notifier/NotifierPlugin';
-import { LocalKeyVault } from '../storage/LocalKeyVault';
-import { MasterPost, ChannelType } from '../types';
+import { ChannelType } from '../types';
+import { createEngineContext, type EngineContext, ENGINE_VERSION } from '../core/createEngineContext';
 
 const program = new Command();
+
+/** 进程级懒单例：避免每条命令开关库；退出时 close */
+let sharedCtx: EngineContext | null = null;
+
+function getEngineContext(): EngineContext {
+  if (!sharedCtx) {
+    sharedCtx = createEngineContext();
+  }
+  return sharedCtx;
+}
+
+function closeSharedContext(): void {
+  if (sharedCtx) {
+    sharedCtx.close();
+    sharedCtx = null;
+  }
+}
+
+process.on('exit', () => {
+  closeSharedContext();
+});
 
 program
   .name('solo-creator')
   .description('SoloCreator Content OS - 本地优先的自媒体一人超级工作室')
-  .version('0.1.0');
+  .version(ENGINE_VERSION);
 
 // ============ master 命令组 ============
 const master = program.command('master').description('母稿生成与质检');
@@ -32,18 +45,14 @@ master
   .option('--topic <topic>', '主题标签', '自媒体创作')
   .option('--offline', '跳过 LLM，使用离线规则模式', false)
   .action(async (opts) => {
-    const storage = new SQLiteStorage();
+    const ctx = getEngineContext();
 
-    // LLM 优先 + 离线自动降级
-    const llm = new DeepSeekAdapter();
-    const masterService = new MasterContentService(llm);
-
-    const masterPost = await masterService.createMasterPost(opts.idea, opts.topic);
+    const masterPost = await ctx.masterService.createMasterPost(opts.idea, opts.topic);
     const criticResult = HumanizerZhCritic.evaluate(masterPost.masterMarkdown);
     const hooks = HookGeneratorService.generateHooks(opts.topic, opts.idea);
 
-    storage.saveMasterPost(masterPost);
-    const llmStatus = await llm.isAvailable();
+    ctx.storage.saveMasterPost(masterPost);
+    const llmStatus = await ctx.llm.isAvailable();
     console.log(`\n✅ 母稿已生成并存入本地 SQLite: ${masterPost.id}`);
     console.log(`   生成模式: ${llmStatus ? 'LLM 深度展开 (DeepSeek)' : '离线规则模式 (未配置 DEEPSEEK_API_KEY)'}`);
     console.log(`\n📝 标题: ${masterPost.title}`);
@@ -52,7 +61,6 @@ master
     console.log(`\n🛡️ 去 AI 味质检得分: ${criticResult.score}/100 ${criticResult.passed ? '(通过)' : '(未通过，已自动替换八股词)'}`);
     console.log(`\n💡 核心要点:`);
     masterPost.keyTakeaways.forEach((t, i) => console.log(`  ${i + 1}. ${t}`));
-    storage.close();
   });
 
 // ============ master show ============
@@ -61,15 +69,14 @@ master
   .description('查看母稿全文')
   .requiredOption('--master-id <masterId>', '母稿 ID')
   .action((opts) => {
-    const storage = new SQLiteStorage();
-    const post = storage.getMasterPost(opts.masterId);
+    const ctx = getEngineContext();
+    const post = ctx.storage.getMasterPost(opts.masterId);
     if (!post) {
       console.error(`❌ 未找到母稿: ${opts.masterId}`);
       process.exit(1);
     }
     console.log(`\n# ${post.title}\n`);
     console.log(post.masterMarkdown);
-    storage.close();
   });
 
 // ============ transpile 命令 ============
@@ -79,8 +86,8 @@ program
   .requiredOption('--master-id <masterId>', '母稿 ID')
   .requiredOption('--channels <channels>', '目标渠道，逗号分隔 (wechat,xiaohongshu,x,weibo)')
   .action(async (opts) => {
-    const storage = new SQLiteStorage();
-    const masterPost = storage.getMasterPost(opts.masterId);
+    const ctx = getEngineContext();
+    const masterPost = ctx.storage.getMasterPost(opts.masterId);
 
     if (!masterPost) {
       console.error(`❌ 未找到母稿: ${opts.masterId}`);
@@ -102,7 +109,7 @@ program
       } as TranspileTarget);
       const payloadJson = JSON.stringify(payload, null, 2);
 
-      storage.saveDispatchRecord({
+      ctx.storage.saveDispatchRecord({
         id: `D-${Date.now()}-${channel}`,
         masterId: masterPost.id,
         channel,
@@ -114,7 +121,6 @@ program
       console.log(`\n✅ [${channel}] 转译完成 (${payload.type})`);
       console.log(payloadJson.slice(0, 500) + '...');
     }
-    storage.close();
   });
 
 // ============ render 命令 ============
@@ -124,8 +130,8 @@ program
   .requiredOption('--master-id <masterId>', '母稿 ID')
   .option('--theme <theme>', '视觉主题 (minimal_dark / notion_light)', 'minimal_dark')
   .action(async (opts) => {
-    const storage = new SQLiteStorage();
-    const masterPost = storage.getMasterPost(opts.masterId);
+    const ctx = getEngineContext();
+    const masterPost = ctx.storage.getMasterPost(opts.masterId);
 
     if (!masterPost) {
       console.error(`❌ 未找到母稿: ${opts.masterId}`);
@@ -136,7 +142,6 @@ program
     const paths = await CardRenderer.renderCardFlow(payload as any, { theme: opts.theme as any });
     console.log(`\n✅ 已渲染 ${paths.length} 张 1080×1440 @2x 视网膜卡片:`);
     paths.forEach((p) => console.log(`  📸 ${p}`));
-    storage.close();
   });
 
 // ============ publish 命令 ============
@@ -146,8 +151,8 @@ program
   .requiredOption('--master-id <masterId>', '母稿 ID')
   .requiredOption('--channels <channels>', '目标渠道')
   .action(async (opts) => {
-    const storage = new SQLiteStorage();
-    const masterPost = storage.getMasterPost(opts.masterId);
+    const ctx = getEngineContext();
+    const masterPost = ctx.storage.getMasterPost(opts.masterId);
 
     if (!masterPost) {
       console.error(`❌ 未找到母稿: ${opts.masterId}`);
@@ -156,12 +161,6 @@ program
 
     // 通知器：飞书卡片优先，未配置 webhook 时静默降级为控制台
     const notifier = process.env.FEISHU_WEBHOOK_URL ? new FeishuCardNotifier() : new ConsoleNotifier();
-
-    const registry = new PublisherRegistry();
-    registry.register(new WeChatApiDriver());
-    registry.register(new WeChatCdpDriver());
-    registry.register(new XCdpDriver());
-    registry.register(new XhsCdpDriver());
 
     const formatMap: Record<string, string> = {
       wechat: 'article',
@@ -173,14 +172,14 @@ program
     const channels = opts.channels.split(',') as ChannelType[];
     for (const channel of channels) {
       // 幂等锁：已成功的渠道跳过
-      const existing = storage.getDispatchRecord(masterPost.id, channel);
+      const existing = ctx.storage.getDispatchRecord(masterPost.id, channel);
       if (existing && existing.dispatch_status === 'success') {
         console.log(`⏭️ [${channel}] 已成功分发过 (draft: ${existing.draft_id})，幂等跳过`);
         continue;
       }
 
       const payload = TranspilerMatrix.transpile(masterPost, { channel, format: formatMap[channel] } as TranspileTarget);
-      const result = await registry.dispatch(channel, payload, { draftOnly: true });
+      const result = await ctx.registry.dispatch(channel, payload, { draftOnly: true });
       console.log(`\n${result.success ? '✅' : '❌'} [${channel}] ${result.success ? `草稿已存入 (${result.previewUrl})` : `失败: ${result.errorMessage}`}`);
 
       // 通知：成功推飞书卡片，失败推控制台告警
@@ -191,7 +190,7 @@ program
         timestamp: new Date().toISOString()
       });
 
-      storage.saveDispatchRecord({
+      ctx.storage.saveDispatchRecord({
         id: `D-${Date.now()}-${channel}`,
         masterId: masterPost.id,
         channel,
@@ -207,7 +206,6 @@ program
       event: { kind: 'pipeline_done', masterId: masterPost.id, summary: `母稿《${masterPost.title}》全渠道分发流程结束` },
       timestamp: new Date().toISOString()
     });
-    storage.close();
   });
 
 // ============ config 命令 ============
@@ -219,8 +217,8 @@ config
   .requiredOption('--key <key>', '密钥名，如 WECHAT_APP_ID / WECHAT_APP_SECRET / DEEPSEEK_API_KEY')
   .requiredOption('--value <value>', '密钥值')
   .action((opts) => {
-    const vault = new LocalKeyVault();
-    vault.setSecret(opts.key, opts.value);
+    const ctx = getEngineContext();
+    ctx.vault.setSecret(opts.key, opts.value);
     console.log(`\n🔐 已加密写入: ${opts.key}（存储于 ~/.solo-creator/vault.enc，明文永不落盘）`);
   });
 
@@ -229,8 +227,8 @@ config
   .description('读取已存储的密钥（仅显示末 4 位，用于确认）')
   .requiredOption('--key <key>', '密钥名')
   .action((opts) => {
-    const vault = new LocalKeyVault();
-    const val = vault.getSecret(opts.key);
+    const ctx = getEngineContext();
+    const val = ctx.vault.getSecret(opts.key);
     if (!val) {
       console.log(`❌ 未找到密钥: ${opts.key}`);
       return;

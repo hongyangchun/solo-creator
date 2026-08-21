@@ -1,21 +1,13 @@
 import * as http from 'http';
+import { createEngineContext, ENGINE_VERSION, type EngineContext } from '../core/createEngineContext';
 import { SQLiteStorage } from '../storage/SQLiteStorage';
-import { LocalKeyVault } from '../storage/LocalKeyVault';
-import { MasterContentService } from '../critic/MasterContentService';
 import { HumanizerZhCritic } from '../critic/HumanizerZhCritic';
-import { HookGeneratorService } from '../critic/HookGeneratorService';
-import { DeepSeekAdapter } from '../llm/DeepSeekAdapter';
 import { TranspilerMatrix, TranspileTarget } from '../transpiler/TranspilerMatrix';
 import { CardRenderer } from '../renderer/CardRenderer';
-import { PublisherRegistry } from '../publisher';
-import { WeChatApiDriver } from '../publisher/WeChatApiDriver';
-import { WeChatCdpDriver } from '../publisher/WeChatCdpDriver';
-import { XCdpDriver } from '../publisher/XCdpDriver';
-import { XhsCdpDriver } from '../publisher/XhsCdpDriver';
-import { ChannelType, MasterPost, PublishResult, UnifiedPayload } from '../types';
+import { ChannelType, PublishResult, UnifiedPayload } from '../types';
 
 const PORT = Number(process.env.ENGINE_PORT || 39281);
-const VERSION = '0.1.0';
+const VERSION = ENGINE_VERSION;
 
 // ---- 响应形状 { code, data, message } ----
 function ok(data: unknown, res: http.ServerResponse): void {
@@ -123,16 +115,6 @@ async function runRenderJob(masterId: string, theme: 'minimal_dark' | 'notion_li
   return job;
 }
 
-// ---- 发布驱动注册（与 CLI 一致：API 优先，CDP 降级）----
-function buildRegistry(): PublisherRegistry {
-  const registry = new PublisherRegistry();
-  registry.register(new WeChatApiDriver());
-  registry.register(new WeChatCdpDriver());
-  registry.register(new XCdpDriver());
-  registry.register(new XhsCdpDriver());
-  return registry;
-}
-
 // ---- 渠道→转译目标映射 ----
 function targetFor(channel: string): TranspileTarget | null {
   switch (channel) {
@@ -150,10 +132,9 @@ function targetFor(channel: string): TranspileTarget | null {
 }
 
 export function startEngineServer(port: number = PORT): http.Server {
-  const storage = new SQLiteStorage();
-  const vault = new LocalKeyVault();
-  const llm = new DeepSeekAdapter();
-  const masterService = new MasterContentService(llm);
+  // 唯一 Composition Root：CLI / HTTP 共用同一组装；Registry 只建一次
+  const ctx: EngineContext = createEngineContext();
+  const { storage, vault, llm, masterService, registry } = ctx;
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://127.0.0.1:${port}`);
@@ -281,7 +262,6 @@ export function startEngineServer(port: number = PORT): http.Server {
         const { channels, draftOnly = true } = await readJsonBody(req);
         const post = storage.getMasterPost(publishM[1]);
         if (!post) return fail(404, `母稿不存在: ${publishM[1]}`, res);
-        const registry = buildRegistry();
         const list: string[] = Array.isArray(channels) && channels.length ? channels : ['wechat'];
         const job: Job = {
           id: `J-${Date.now()}`,
@@ -362,7 +342,7 @@ export function startEngineServer(port: number = PORT): http.Server {
         // 返回结构化 result 而非 500
         let result: PublishResult;
         try {
-          result = await buildRegistry().dispatch(record.channel as ChannelType, payload, { draftOnly: true });
+          result = await registry.dispatch(record.channel as ChannelType, payload, { draftOnly: true });
         } catch (err: any) {
           result = {
             success: false,
@@ -447,6 +427,10 @@ export function startEngineServer(port: number = PORT): http.Server {
 
   server.listen(port, '127.0.0.1', () => {
     console.log(`[engine-server] listening on http://127.0.0.1:${port} (v${VERSION})`);
+  });
+
+  server.on('close', () => {
+    ctx.close();
   });
 
   return server;
