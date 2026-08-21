@@ -102,13 +102,12 @@ export default function SettingsSecrets() {
   const { data, isLoading, isError, error } = useSecrets();
 
   return (
-    <div className="mx-auto max-w-[760px] p-6">
-      <h1 className="text-2xl font-semibold tracking-tight">密钥 / 配置中心</h1>
-      <p className="mt-1 text-sm text-muted">
+    <div>
+      <p className="text-sm text-muted">
         所有密钥经 AES-256-GCM 加密存于本地 vault.enc，明文永不离开引擎进程。
       </p>
 
-      <div className="mt-6 rounded-[var(--radius-md)] border border-border bg-surface">
+      <div className="mt-4 rounded-[var(--radius-md)] border border-border bg-surface">
         {isLoading && <div className="p-8 text-center text-sm text-muted">正在读取密钥状态…</div>}
         {isError && <div className="p-8 text-center text-sm text-danger">读取失败：{error.message}</div>}
         {data && data.length === 0 && <div className="p-8 text-center text-sm text-muted">暂无密钥</div>}

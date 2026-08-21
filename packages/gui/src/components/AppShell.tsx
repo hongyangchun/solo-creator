@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
-  KeyRound,
+  Settings,
   PenLine,
   Monitor,
   LayoutDashboard,
+  TrendingUp,
   Sun,
   Moon,
   Search,
@@ -17,10 +18,11 @@ import { useUiStore } from '../store/uiStore';
 import { useSecrets } from '../lib/queries';
 
 const NAV_ITEMS = [
-  { to: '/settings/secrets', label: '密钥配置', icon: KeyRound },
-  { to: '/studio', label: '母稿创作台', icon: PenLine },
-  { to: '/preview/current', label: '多端预览', icon: Monitor },
-  { to: '/dashboard', label: '发布看板', icon: LayoutDashboard }
+  { to: '/studio', label: '母稿创作台', icon: PenLine, match: (p: string) => p.startsWith('/studio') },
+  { to: '/preview/current', label: '多端预览', icon: Monitor, match: (p: string) => p.startsWith('/preview') },
+  { to: '/dashboard', label: '发布看板', icon: LayoutDashboard, match: (p: string) => p.startsWith('/dashboard') },
+  { to: '/retro', label: '数据复盘', icon: TrendingUp, match: (p: string) => p.startsWith('/retro') },
+  { to: '/settings', label: '设置', icon: Settings, match: (p: string) => p.startsWith('/settings') }
 ] as const;
 
 function CommandPalette() {
@@ -44,8 +46,10 @@ function CommandPalette() {
   const actions = [
     { label: '新建母稿', run: () => navigate('/studio') },
     { label: '多端预览', run: () => navigate('/preview/current') },
-    { label: '配置密钥', run: () => navigate('/settings/secrets') },
     { label: '发布看板', run: () => navigate('/dashboard') },
+    { label: '数据复盘', run: () => navigate('/retro') },
+    { label: '打开设置', run: () => navigate('/settings') },
+    { label: '配置密钥', run: () => navigate('/settings/secrets') },
     { label: '切换主题', run: () => useUiStore.getState().toggleTheme() }
   ];
 
@@ -64,7 +68,7 @@ function CommandPalette() {
           <Search size={16} />
           <input
             autoFocus
-            placeholder="搜索动作：新建母稿 / 预览 / 发布 / 配置…"
+            placeholder="搜索动作：新建母稿 / 预览 / 复盘 / 设置…"
             className="w-full bg-transparent text-fg outline-none placeholder:text-muted"
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -100,6 +104,7 @@ function CommandPalette() {
 export default function AppShell() {
   const theme = useUiStore((s) => s.theme);
   const toggleTheme = useUiStore((s) => s.toggleTheme);
+  const location = useLocation();
   const [engineOk, setEngineOk] = useState(false);
   const { data: secrets } = useSecrets();
 
@@ -167,24 +172,27 @@ export default function AppShell() {
         {/* 左侧导航 */}
         <nav className="flex w-60 shrink-0 flex-col border-r border-border bg-surface p-3">
           <ul className="flex flex-col gap-1">
-            {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-              <li key={to} className="relative">
-                <NavLink
-                  to={to}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2 text-sm transition-colors duration-[120ms] ${
-                      isActive ? 'bg-accent-soft font-medium text-accent' : 'text-fg-2 hover:bg-surface-warm'
-                    }`
-                  }
-                >
-                  <Icon size={18} strokeWidth={1.75} />
-                  {label}
-                </NavLink>
-                {to === '/settings/secrets' && missingSecrets && (
-                  <span className="absolute right-3 top-2.5 h-2 w-2 rounded-[var(--radius-pill)] bg-warn" aria-label="有密钥未配置" />
-                )}
-              </li>
-            ))}
+            {NAV_ITEMS.map(({ to, label, icon: Icon, match }) => {
+              const isActive = match(location.pathname);
+              return (
+                <li key={to} className="relative">
+                  <NavLink
+                    to={to}
+                    className={() =>
+                      `flex items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2 text-sm transition-colors duration-[120ms] ${
+                        isActive ? 'bg-accent-soft font-medium text-accent' : 'text-fg-2 hover:bg-surface-warm'
+                      }`
+                    }
+                  >
+                    <Icon size={18} strokeWidth={1.75} />
+                    {label}
+                  </NavLink>
+                  {to === '/settings' && missingSecrets && (
+                    <span className="absolute right-3 top-2.5 h-2 w-2 rounded-[var(--radius-pill)] bg-warn" aria-label="有密钥未配置" />
+                  )}
+                </li>
+              );
+            })}
           </ul>
 
           <div className="mt-auto flex items-center gap-2 px-3 text-xs text-muted">

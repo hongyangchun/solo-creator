@@ -1,38 +1,61 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 type Theme = 'light' | 'dark';
+type CardTheme = 'minimal_dark' | 'notion_light';
 
 interface UiState {
   theme: Theme;
   commandPaletteOpen: boolean;
   sidebarCollapsed: boolean;
   selectedChannels: string[];
-  cardTheme: 'minimal_dark' | 'notion_light';
+  cardTheme: CardTheme;
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setSelectedChannels: (chs: string[]) => void;
-  setCardTheme: (t: 'minimal_dark' | 'notion_light') => void;
+  setCardTheme: (t: CardTheme) => void;
 }
 
-export const useUiStore = create<UiState>((set) => ({
-  theme: 'light',
-  commandPaletteOpen: false,
-  sidebarCollapsed: false,
-  selectedChannels: ['wechat', 'xiaohongshu', 'x', 'weibo'],
-  cardTheme: 'minimal_dark',
-  setTheme: (theme) => {
-    document.documentElement.setAttribute('data-theme', theme);
-    set({ theme });
-  },
-  toggleTheme: () => {
-    const next = (document.documentElement.getAttribute('data-theme') || 'light') === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', next);
-    set({ theme: next as Theme });
-  },
-  setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-  setSelectedChannels: (selectedChannels) => set({ selectedChannels }),
-  setCardTheme: (cardTheme) => set({ cardTheme })
-}));
+const applyTheme = (theme: Theme): void => {
+  document.documentElement.setAttribute('data-theme', theme);
+};
+
+export const useUiStore = create<UiState>()(
+  persist(
+    (set, get) => ({
+      theme: 'light',
+      commandPaletteOpen: false,
+      sidebarCollapsed: false,
+      selectedChannels: ['wechat', 'xiaohongshu', 'x', 'weibo'],
+      cardTheme: 'minimal_dark',
+      setTheme: (theme) => {
+        applyTheme(theme);
+        set({ theme });
+      },
+      toggleTheme: () => {
+        const next: Theme = get().theme === 'light' ? 'dark' : 'light';
+        applyTheme(next);
+        set({ theme: next });
+      },
+      setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
+      toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+      setSelectedChannels: (selectedChannels) => set({ selectedChannels }),
+      setCardTheme: (cardTheme) => set({ cardTheme })
+    }),
+    {
+      name: 'solo-creator.ui',
+      partialize: (state) => ({
+        theme: state.theme,
+        selectedChannels: state.selectedChannels,
+        cardTheme: state.cardTheme
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.theme) {
+          applyTheme(state.theme);
+        }
+      }
+    }
+  )
+);
